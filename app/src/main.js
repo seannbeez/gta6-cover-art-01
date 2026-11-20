@@ -1,334 +1,346 @@
-// LEONIDA GOLD — the studio wiring.
-//
-// Connects the controls to the renderer: photos go into panels, sliders crop
-// them, layout and grade buttons restyle the cover, the word fields rewrite
-// the title, and the export buttons save PNGs. A `?shot=` query instead sets
-// up one fixed scene for a screenshot and raises window.__shotReady.
+// LEONIDA GOLD — Vice Cover Studio: editor wiring (v2, written fresh).
+// Binds the sidebar controls to the cover renderer, handles photo upload,
+// per-panel crop, PNG export in 3 sizes, and the ?shot= screenshot mode.
 
-import { LAYOUTS, GRADES, EXPORT_SIZES, defaultState, blankPanel, drawCoverArt, renderCover } from './cover.js';
+import { GRADES, LAYOUTS, SAMPLE_ORDER, drawCover, renderCover } from './cover.js';
 
-const SAMPLES = [
-  { file: 'boulevard.jpg', name: 'Boulevard' },
-  { file: 'pier.jpg', name: 'Pier' },
-  { file: 'skyline.jpg', name: 'Skyline' },
-];
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => [...document.querySelectorAll(sel)];
 
-const canvas = document.getElementById('cover');
-const statusEl = document.getElementById('status');
-const state = defaultState();
-let selectedPanel = 0;
-let drawnOnce = false;
-
-function say(message) {
-  statusEl.textContent = message;
-}
-
-function loadImage(url) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`could not load ${url}`));
-    img.src = url;
-  });
-}
-
-function panelCount() {
-  return (LAYOUTS[state.layout] ?? LAYOUTS.poster).panels(100, 100).length;
-}
-
-function syncPanels() {
-  while (state.panels.length < panelCount()) state.panels.push(blankPanel());
-  if (selectedPanel >= panelCount()) selectedPanel = 0;
-}
-
-function draw() {
-  syncPanels();
-  drawCoverArt(canvas, state);
-  drawnOnce = true;
-  refreshTabs();
-}
-
-function refreshTabs() {
-  const tabs = document.getElementById('panel-tabs');
-  tabs.innerHTML = '';
-  for (let i = 0; i < panelCount(); i++) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = `Panel ${i + 1}`;
-    b.setAttribute('aria-pressed', String(i === selectedPanel));
-    b.addEventListener('click', () => {
-      selectedPanel = i;
-      syncSliders();
-      draw();
-    });
-    tabs.appendChild(b);
-  }
-}
-
-function syncSliders() {
-  const slot = state.panels[selectedPanel] ?? blankPanel();
-  const set = (id, val, fmt) => {
-    const el = document.getElementById(id);
-    el.value = String(val);
-    document.getElementById(`${id}-val`).textContent = fmt(val);
-  };
-  set('zoom', slot.zoom, (v) => `${Number(v).toFixed(2)}×`);
-  set('panx', slot.ox, (v) => Number(v).toFixed(2));
-  set('pany', slot.oy, (v) => Number(v).toFixed(2));
-}
-
-function givePhotoTo(slotIndex, img) {
-  if (state.fillOne) {
-    for (let i = 0; i < panelCount(); i++) {
-      state.panels[i].photo = img;
-      state.panels[i].zoom = 1;
-      // Nudge each panel's crop so the same photo does not repeat identically.
-      state.panels[i].ox = ((i % 3) - 1) * 0.1;
-      state.panels[i].oy = i % 2 ? 0.06 : -0.06;
-    }
-  } else {
-    const slot = state.panels[slotIndex];
-    slot.photo = img;
-    slot.zoom = 1;
-    slot.ox = 0;
-    slot.oy = 0;
-  }
-  syncSliders();
-  draw();
-}
-
-function pointInPoly(x, y, poly) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
-    if (((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)) inside = !inside;
-  }
-  return inside;
-}
-
-canvas.addEventListener('click', (event) => {
-  const rect = canvas.getBoundingClientRect();
-  const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
-  const y = ((event.clientY - rect.top) / rect.height) * canvas.height;
-  const polys = (LAYOUTS[state.layout] ?? LAYOUTS.poster).panels(canvas.width, canvas.height);
-  for (let i = 0; i < polys.length; i++) {
-    if (pointInPoly(x, y, polys[i])) {
-      selectedPanel = i;
-      syncSliders();
-      draw();
-      say(`Editing panel ${i + 1}.`);
-      return;
-    }
-  }
-});
-
-// --- controls ---------------------------------------------------------------
-
-document.getElementById('upload').addEventListener('change', async (event) => {
-  const files = [...event.target.files];
-  if (!files.length) return;
-  for (const [i, file] of files.entries()) {
-    try {
-      const img = await loadImage(URL.createObjectURL(file));
-      givePhotoTo((selectedPanel + i) % panelCount(), img);
-    } catch {
-      say(`Could not read ${file.name}.`);
-    }
-  }
-  say(`${files.length} photo${files.length > 1 ? 's' : ''} loaded.`);
-});
-
-document.getElementById('fill-all').addEventListener('click', () => {
-  state.fillOne = !state.fillOne;
-  document.getElementById('fill-all').setAttribute('aria-pressed', String(state.fillOne));
-  say(state.fillOne ? 'New photos fill every panel.' : 'New photos fill only the selected panel.');
-});
-document.getElementById('fill-all').setAttribute('aria-pressed', 'true');
-
-const samplesEl = document.getElementById('samples');
-for (const sample of SAMPLES) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.title = sample.name;
-  b.setAttribute('aria-pressed', 'false');
-  const img = document.createElement('img');
-  img.src = `./samples/${sample.file}`;
-  img.alt = `${sample.name} sample photo`;
-  b.appendChild(img);
-  b.addEventListener('click', async () => {
-    try {
-      const photo = await loadImage(`./samples/${sample.file}`);
-      givePhotoTo(selectedPanel, photo);
-      [...samplesEl.children].forEach((c) => c.setAttribute('aria-pressed', 'false'));
-      b.setAttribute('aria-pressed', 'true');
-      say(`${sample.name} photo loaded.`);
-    } catch {
-      say(`Could not load the ${sample.name} sample.`);
-    }
-  });
-  samplesEl.appendChild(b);
-}
-
-const layoutsEl = document.getElementById('layouts');
-for (const [key, layout] of Object.entries(LAYOUTS)) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'layout-btn';
-  b.dataset.layout = key;
-  b.setAttribute('aria-pressed', String(key === state.layout));
-  b.innerHTML = `<span class="glyph"></span>${layout.name}`;
-  b.title = layout.hint;
-  b.addEventListener('click', () => {
-    state.layout = key;
-    selectedPanel = 0;
-    syncPanels();
-    [...layoutsEl.children].forEach((c) => c.setAttribute('aria-pressed', String(c === b)));
-    syncSliders();
-    draw();
-    say(`${layout.name} layout — ${panelCount()} panels.`);
-  });
-  layoutsEl.appendChild(b);
-}
-
-const gradesEl = document.getElementById('grades');
-for (const [key, grade] of Object.entries(GRADES)) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'grade-btn';
-  b.style.background = grade.swatch;
-  b.textContent = grade.name;
-  b.title = grade.name;
-  b.setAttribute('aria-pressed', String(key === state.grade));
-  b.addEventListener('click', () => {
-    state.grade = key;
-    [...gradesEl.children].forEach((c) => c.setAttribute('aria-pressed', String(c === b)));
-    draw();
-    say(`${grade.name} grade applied.`);
-  });
-  gradesEl.appendChild(b);
-}
-
-function bindText(id, key, transform) {
-  document.getElementById(id).addEventListener('input', (event) => {
-    state[key] = transform ? transform(event.target.value) : event.target.value;
-    draw();
-  });
-}
-bindText('title', 'title');
-bindText('kicker', 'kicker');
-bindText('tagline', 'tagline');
-bindText('callout', 'callout');
-bindText('callout-by', 'calloutBy');
-bindText('tag1', 'tags', (v) => [v, state.tags[1] ?? '']);
-bindText('tag2', 'tags', (v) => [state.tags[0] ?? '', v]);
-document.getElementById('callout-on').addEventListener('change', (e) => { state.calloutOn = e.target.checked; draw(); });
-document.getElementById('seal-on').addEventListener('change', (e) => { state.sealOn = e.target.checked; draw(); });
-document.getElementById('billing-on').addEventListener('change', (e) => { state.billingOn = e.target.checked; draw(); });
-
-function bindSlider(id, key) {
-  document.getElementById(id).addEventListener('input', (event) => {
-    const slot = state.panels[selectedPanel];
-    slot[key] = Number(event.target.value);
-    const fmt = key === 'zoom' ? (v) => `${v.toFixed(2)}×` : (v) => v.toFixed(2);
-    document.getElementById(`${id}-val`).textContent = fmt(slot[key]);
-    draw();
-  });
-}
-bindSlider('zoom', 'zoom');
-bindSlider('panx', 'ox');
-bindSlider('pany', 'oy');
-
-// --- export -----------------------------------------------------------------
-
-function downloadPNG(canvasEl, filename) {
-  return new Promise((resolve) => {
-    canvasEl.toBlob((blob) => {
-      if (!blob) { resolve(false); return; }
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      resolve(true);
-    }, 'image/png');
-  });
-}
-
-async function exportSize(sizeKey) {
-  const size = EXPORT_SIZES[sizeKey];
-  const art = renderCover(state, sizeKey);
-  const ok = await downloadPNG(art, `leonida-gold-${size.w}x${size.h}.png`);
-  if (ok) say(`Exported ${size.label} PNG.`);
-  return ok;
-}
-
-const exportsEl = document.getElementById('exports');
-for (const [key, size] of Object.entries(EXPORT_SIZES)) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.textContent = size.label;
-  b.addEventListener('click', () => { exportSize(key); });
-  exportsEl.appendChild(b);
-}
-document.getElementById('export-all').addEventListener('click', async () => {
-  for (const key of Object.keys(EXPORT_SIZES)) {
-    await exportSize(key);
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  say('All 3 sizes exported.');
-});
-
-function syncButtons() {
-  [...document.getElementById('layouts').children].forEach((c) => {
-    c.setAttribute('aria-pressed', String(c.dataset.layout === state.layout));
-  });
-  [...document.getElementById('grades').children].forEach((c, i) => {
-    c.setAttribute('aria-pressed', String(Object.keys(GRADES)[i] === state.grade));
-  });
-}
-
-// --- fixed scenes for screenshots -------------------------------------------
-
-async function runShot() {
-  const query = new URLSearchParams(location.search);
-  const shot = query.get('shot');
-  if (!shot) return false;
-  try { await document.fonts.load('40px Anton'); } catch { /* fall back to system font */ }
-  await document.fonts.ready;
-  const photoName = query.get('photo') ?? 'boulevard';
-  const caption = query.get('caption') ?? 'LEONIDA GOLD';
-  state.title = caption;
-  if (query.get('layout')) state.layout = query.get('layout');
-  if (query.get('grade')) state.grade = query.get('grade');
-  if (query.get('size')) state.size = query.get('size');
-  if (query.get('kicker')) state.kicker = query.get('kicker');
-  if (query.get('tagline')) state.tagline = query.get('tagline');
-  syncButtons();
-  try {
-    const photo = await loadImage(`./samples/${photoName}.jpg`);
-    givePhotoTo(0, photo);
-  } catch {
-    draw();
-  }
-  if (shot === 'cover') {
-    document.body.classList.add('shot-cover');
-    draw();
-  }
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  window.__shotReady = true;
-  return true;
-}
-
-// --- boot -------------------------------------------------------------------
-
-window.__leonida = {
-  state,
-  draw,
-  renderCover,
-  exportSize,
-  shotDone: () => drawnOnce,
+const SAMPLE_URLS = {
+  skyline: 'samples/skyline.jpg',
+  boulevard: 'samples/boulevard.jpg',
+  pier: 'samples/pier.jpg',
 };
 
-draw();
-syncSliders();
-runShot();
+const EXPORT_SIZES = [
+  { label: '1080 × 1080', w: 1080, h: 1080 },
+  { label: '1080 × 1350', w: 1080, h: 1350 },
+  { label: '1920 × 1080', w: 1920, h: 1080 },
+];
+
+const DEFAULT_STATE = {
+  layout: 'poster',
+  grade: 'vice-sunset',
+  title: 'LEONIDA GOLD',
+  kicker: 'VICE CITY STORIES',
+  tagline: 'EVERY SUNSET HAS A PRICE',
+  caption: 'We take the city tonight.',
+  calloutBy: 'LUCIA',
+  tags: ['THE DRIVER', 'THE FIXER'],
+  panels: [],
+};
+
+let state = structuredClone(DEFAULT_STATE);
+let images = {}; // key -> HTMLImageElement (sample or uploaded data URL)
+let activePanel = 0;
+let canvas = null;
+
+function panelCount() {
+  const layout = LAYOUTS[state.layout] || LAYOUTS.poster;
+  const w = canvas ? canvas.width : 100;
+  const h = canvas ? canvas.height : 100;
+  return layout.panels(w, h).length;
+}
+
+function ensurePanels() {
+  const n = panelCount();
+  while (state.panels.length < n) {
+    // Prefer a photo no earlier panel uses, so multi-panel covers never
+    // repeat the same scene twice.
+    const used = new Set(state.panels.map((p) => p.photo));
+    const photo = SAMPLE_ORDER.find((k) => !used.has(k))
+      || SAMPLE_ORDER[state.panels.length % SAMPLE_ORDER.length];
+    state.panels.push({ photo, zoom: 1.05, px: 0, py: 0 });
+  }
+  state.panels.length = n;
+  if (activePanel >= n) activePanel = 0;
+}
+
+function loadImage(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+async function loadSamples() {
+  for (const key of Object.keys(SAMPLE_URLS)) {
+    if (!images[key]) images[key] = await loadImage(SAMPLE_URLS[key]);
+  }
+}
+
+function render() {
+  if (!canvas) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(320, Math.round(rect.width * dpr));
+  const h = Math.max(320, Math.round(rect.height * dpr));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  ensurePanels();
+  const ctx = canvas.getContext('2d');
+  drawCover(ctx, canvas.width, canvas.height, state, images);
+  syncChips();
+}
+
+function syncChips() {
+  const chips = $('#panel-chips');
+  if (!chips) return;
+  chips.innerHTML = '';
+  state.panels.forEach((p, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (i === activePanel ? ' active' : '');
+    b.textContent = 'Panel ' + (i + 1);
+    b.addEventListener('click', () => {
+      activePanel = i;
+      syncCrop();
+      render();
+    });
+    chips.appendChild(b);
+  });
+}
+
+function syncCrop() {
+  const p = state.panels[activePanel];
+  if (!p) return;
+  const zoom = $('#crop-zoom');
+  const px = $('#crop-x');
+  const py = $('#crop-y');
+  if (zoom) { zoom.value = p.zoom; $('#crop-zoom-val').textContent = p.zoom.toFixed(2) + '×'; }
+  if (px) { px.value = p.px; $('#crop-x-val').textContent = (+p.px).toFixed(2); }
+  if (py) { py.value = p.py; $('#crop-y-val').textContent = (+p.py).toFixed(2); }
+}
+
+function download(canvasEl, name) {
+  canvasEl.toBlob((blob) => {
+    if (!blob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }, 'image/png');
+}
+
+function exportSize(size, silent) {
+  const c = renderCover(state, images, size.w, size.h);
+  const safe = state.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'cover';
+  download(c, `leonida-gold-${safe}-${size.w}x${size.h}.png`);
+  if (!silent) flash(`Exported ${size.w} × ${size.h} PNG`);
+}
+
+function flash(msg) {
+  const el = $('#toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+function buildLayoutButtons() {
+  const wrap = $('#layout-grid');
+  wrap.innerHTML = '';
+  Object.entries(LAYOUTS).forEach(([key, def]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'layout-btn' + (key === state.layout ? ' active' : '');
+    b.dataset.layout = key;
+    b.innerHTML = `<span class="mini mini-${key}"></span><span>${def.name}</span>`;
+    b.title = def.desc;
+    b.addEventListener('click', () => {
+      state.layout = key;
+      $$('.layout-btn').forEach((x) => x.classList.toggle('active', x === b));
+      ensurePanels();
+      render();
+    });
+    wrap.appendChild(b);
+  });
+}
+
+function buildGradeButtons() {
+  const wrap = $('#grade-grid');
+  wrap.innerHTML = '';
+  Object.entries(GRADES).forEach(([key, g]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'grade-btn' + (key === state.grade ? ' active' : '');
+    b.dataset.grade = key;
+    b.title = g.name;
+    b.style.background = `linear-gradient(135deg, ${g.sky[1]}, ${g.sky[3]}, ${g.sun})`;
+    b.innerHTML = `<span>${g.name}</span>`;
+    b.addEventListener('click', () => {
+      state.grade = key;
+      $$('.grade-btn').forEach((x) => x.classList.toggle('active', x === b));
+      render();
+    });
+    wrap.appendChild(b);
+  });
+}
+
+function buildSampleThumbs() {
+  const wrap = $('#sample-thumbs');
+  wrap.innerHTML = '';
+  Object.keys(SAMPLE_URLS).forEach((key) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'thumb';
+    b.title = key;
+    const img = document.createElement('img');
+    img.src = SAMPLE_URLS[key];
+    img.alt = key + ' sample photo';
+    b.appendChild(img);
+    b.addEventListener('click', () => {
+      state.panels[activePanel].photo = key;
+      render();
+    });
+    wrap.appendChild(b);
+  });
+}
+
+function buildExportButtons() {
+  const wrap = $('#export-bar');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  EXPORT_SIZES.forEach((s) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'export-btn';
+    b.textContent = 'PNG ' + s.label;
+    b.addEventListener('click', () => exportSize(s));
+    wrap.appendChild(b);
+  });
+  const all = document.createElement('button');
+  all.type = 'button';
+  all.className = 'export-btn primary';
+  all.textContent = 'Export all 3 sizes';
+  all.addEventListener('click', () => {
+    EXPORT_SIZES.forEach((s, i) => setTimeout(() => exportSize(s, true), i * 350));
+    flash('Exported all 3 sizes');
+  });
+  wrap.appendChild(all);
+}
+
+function bindTextInputs() {
+  const map = {
+    'in-title': 'title', 'in-kicker': 'kicker', 'in-tagline': 'tagline',
+    'in-caption': 'caption', 'in-callout-by': 'calloutBy',
+  };
+  Object.entries(map).forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = state[key];
+    el.addEventListener('input', () => { state[key] = el.value; render(); });
+  });
+  const tag1 = $('#in-tag-1');
+  const tag2 = $('#in-tag-2');
+  if (tag1) { tag1.value = state.tags[0] || ''; tag1.addEventListener('input', () => { state.tags[0] = tag1.value.toUpperCase(); render(); }); }
+  if (tag2) { tag2.value = state.tags[1] || ''; tag2.addEventListener('input', () => { state.tags[1] = tag2.value.toUpperCase(); render(); }); }
+}
+
+function bindCrop() {
+  const zoom = $('#crop-zoom');
+  const px = $('#crop-x');
+  const py = $('#crop-y');
+  if (zoom) zoom.addEventListener('input', () => { state.panels[activePanel].zoom = +zoom.value; syncCrop(); render(); });
+  if (px) px.addEventListener('input', () => { state.panels[activePanel].px = +px.value; syncCrop(); render(); });
+  if (py) py.addEventListener('input', () => { state.panels[activePanel].py = +py.value; syncCrop(); render(); });
+}
+
+function bindUpload() {
+  const input = $('#upload');
+  const btn = $('#upload-btn');
+  if (btn && input) btn.addEventListener('click', () => input.click());
+  if (!input) return;
+  input.addEventListener('change', async () => {
+    const files = [...input.files].slice(0, 4);
+    for (const f of files) {
+      const dataUrl = await new Promise((res) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.readAsDataURL(f);
+      });
+      const key = 'up-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      const img = await loadImage(dataUrl);
+      if (img) {
+        images[key] = img;
+        state.panels[activePanel].photo = key;
+      }
+    }
+    input.value = '';
+    render();
+  });
+  const allBtn = $('#use-all-btn');
+  if (allBtn) {
+    allBtn.addEventListener('click', () => {
+      const key = state.panels[activePanel].photo;
+      state.panels.forEach((p) => { p.photo = key; });
+      render();
+      flash('Same photo in all panels');
+    });
+  }
+}
+
+function applyShotParams(params) {
+  if (params.get('layout') && LAYOUTS[params.get('layout')]) state.layout = params.get('layout');
+  if (params.get('grade') && GRADES[params.get('grade')]) state.grade = params.get('grade');
+  if (params.get('title')) state.title = params.get('title');
+  if (params.get('kicker')) state.kicker = params.get('kicker');
+  if (params.get('tagline')) state.tagline = params.get('tagline');
+  if (params.get('caption')) state.caption = params.get('caption');
+  if (params.get('photo') && SAMPLE_URLS[params.get('photo')]) {
+    state.panels = [{ photo: params.get('photo'), zoom: 1.05, px: 0, py: 0 }];
+  }
+  if (params.get('tags')) state.tags = params.get('tags').split(',').slice(0, 3);
+}
+
+async function init() {
+  const params = new URLSearchParams(location.search);
+  const shot = params.get('shot');
+  applyShotParams(params);
+  await loadSamples();
+  if (document.fonts && document.fonts.load) {
+    try { await document.fonts.load('100px Anton'); } catch (e) { /* fallback font */ }
+  }
+  canvas = $('#cover');
+  if (shot === 'cover') {
+    document.body.classList.add('shot-cover');
+    // Size the canvas to the exact viewport for the screenshot.
+    canvas.style.width = '100vw';
+    canvas.style.height = '100vh';
+    render();
+    return;
+  }
+  // Editor mode.
+  buildLayoutButtons();
+  buildGradeButtons();
+  buildSampleThumbs();
+  buildExportButtons();
+  bindTextInputs();
+  bindCrop();
+  bindUpload();
+  ensurePanels();
+  syncCrop();
+  render();
+  window.addEventListener('resize', render);
+  canvas.addEventListener('click', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const cx = (ev.clientX - rect.left) / rect.width;
+    const cy = (ev.clientY - rect.top) / rect.height;
+    const layout = LAYOUTS[state.layout] || LAYOUTS.poster;
+    const panels = layout.panels(canvas.width, canvas.height);
+    const hit = panels.findIndex((p) => cx >= p.x && cx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h);
+    if (hit >= 0) {
+      activePanel = hit;
+      syncCrop();
+      render();
+    }
+  });
+}
+
+init();

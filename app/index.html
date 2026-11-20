@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -7,90 +7,73 @@
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-<main class="studio">
-  <aside class="panel" id="controls">
-    <header class="brand">
-      <h1>LEONIDA GOLD</h1>
-      <p class="brand-sub">VICE COVER STUDIO &middot; YOUR PHOTO, OUR SUNSET</p>
-    </header>
+<header id="toolbar">
+  <div class="brand">
+    <span class="brand-title">LEONIDA GOLD</span>
+    <span class="brand-sub">VICE COVER STUDIO &middot; YOUR PHOTO, OUR SUNSET</span>
+  </div>
+  <div id="export-bar" aria-label="Export"></div>
+</header>
 
-    <section class="group">
+<main>
+  <aside id="controls">
+    <section>
       <h2>1 &middot; Photo</h2>
-      <p class="hint">Pick a panel below the preview, then give it a photo. “Use in all panels” fills every panel with the same photo.</p>
+      <p class="help">Pick a panel below the preview, then give it a photo. &ldquo;Use in all panels&rdquo; fills every panel with the same photo.</p>
       <div class="row">
-        <label class="file-btn">Upload photo(s)
-          <input id="upload" type="file" accept="image/*" multiple hidden>
-        </label>
-        <button id="fill-all" type="button" class="ghost">Use in all panels</button>
+        <button id="upload-btn" type="button" class="btn">Upload photo(s)</button>
+        <button id="use-all-btn" type="button" class="btn gold">Use in all panels</button>
       </div>
-      <div class="samples" id="samples" aria-label="Sample photos"></div>
-      <div class="sliders">
-        <label>Zoom <input id="zoom" type="range" min="1" max="2.5" step="0.01" value="1"><span id="zoom-val">1.00&times;</span></label>
-        <label>Pan X <input id="panx" type="range" min="-0.5" max="0.5" step="0.01" value="0"><span id="panx-val">0</span></label>
-        <label>Pan Y <input id="pany" type="range" min="-0.5" max="0.5" step="0.01" value="0"><span id="pany-val">0</span></label>
-      </div>
+      <input id="upload" type="file" accept="image/*" multiple hidden>
+      <div id="sample-thumbs" aria-label="Sample photos"></div>
+      <p class="help small">Samples are original illustrated Vice City scenes.</p>
     </section>
 
-    <section class="group">
+    <section>
       <h2>2 &middot; Layout</h2>
-      <div class="layout-grid" id="layouts" role="radiogroup" aria-label="Panel layout"></div>
+      <div id="layout-grid" aria-label="Layouts"></div>
     </section>
 
-    <section class="group">
+    <section>
       <h2>3 &middot; Grade</h2>
-      <div class="grade-row" id="grades" role="radiogroup" aria-label="Colour grade"></div>
+      <div id="grade-grid" aria-label="Colour grades"></div>
     </section>
 
-    <section class="group">
+    <section>
       <h2>4 &middot; Words</h2>
-      <label class="field">Title
-        <input id="title" type="text" maxlength="24" value="LEONIDA GOLD">
-      </label>
-      <label class="field">Kicker
-        <input id="kicker" type="text" maxlength="32" value="VICE CITY STORIES">
-      </label>
-      <label class="field">Tagline
-        <input id="tagline" type="text" maxlength="48" value="EVERY SUNSET HAS A PRICE">
-      </label>
-      <label class="field">Callout
-        <input id="callout" type="text" maxlength="72" value="We take the city tonight.">
-      </label>
+      <label>Title <input id="in-title" type="text" maxlength="24" autocomplete="off"></label>
+      <label>Kicker <input id="in-kicker" type="text" maxlength="32" autocomplete="off"></label>
+      <label>Tagline <input id="in-tagline" type="text" maxlength="48" autocomplete="off"></label>
+      <label>Callout <input id="in-caption" type="text" maxlength="80" autocomplete="off"></label>
+      <label>Callout by <input id="in-callout-by" type="text" maxlength="16" autocomplete="off"></label>
       <div class="row">
-        <label class="field half">Said by
-          <input id="callout-by" type="text" maxlength="16" value="LUCIA">
-        </label>
-        <label class="check"><input id="callout-on" type="checkbox" checked> Callout</label>
-      </div>
-      <div class="row">
-        <label class="field half">Role tag 1
-          <input id="tag1" type="text" maxlength="16" value="THE DRIVER">
-        </label>
-        <label class="field half">Role tag 2
-          <input id="tag2" type="text" maxlength="16" value="THE FIXER">
-        </label>
-      </div>
-      <div class="row">
-        <label class="check"><input id="seal-on" type="checkbox" checked> Seal stamp</label>
-        <label class="check"><input id="billing-on" type="checkbox" checked> Billing block</label>
+        <label class="half">Role tag 1 <input id="in-tag-1" type="text" maxlength="14" autocomplete="off"></label>
+        <label class="half">Role tag 2 <input id="in-tag-2" type="text" maxlength="14" autocomplete="off"></label>
       </div>
     </section>
 
-    <section class="group">
-      <h2>5 &middot; Export PNG</h2>
-      <div class="export-row" id="exports"></div>
-      <button id="export-all" type="button" class="primary">Export all 3 sizes</button>
-      <p id="status" role="status">Ready. Load a photo to start.</p>
+    <section>
+      <h2>5 &middot; Crop (active panel)</h2>
+      <label class="slider">Zoom <span id="crop-zoom-val">1.05&times;</span>
+        <input id="crop-zoom" type="range" min="1" max="2.5" step="0.01" value="1.05">
+      </label>
+      <label class="slider">Pan X <span id="crop-x-val">0.00</span>
+        <input id="crop-x" type="range" min="-1" max="1" step="0.01" value="0">
+      </label>
+      <label class="slider">Pan Y <span id="crop-y-val">0.00</span>
+        <input id="crop-y" type="range" min="-1" max="1" step="0.01" value="0">
+      </label>
     </section>
   </aside>
 
-  <section class="stage">
-    <div class="canvas-wrap">
-      <canvas id="cover" width="1920" height="1080" aria-label="Live cover preview"></canvas>
-    </div>
-    <div class="panel-tabs" id="panel-tabs" aria-label="Choose a panel to edit"></div>
-    <p class="stage-hint">Click a panel in the preview to edit its photo, zoom and pan. The cover updates live.</p>
+  <section id="stage">
+    <canvas id="cover" width="960" height="600"></canvas>
+    <div id="panel-chips" aria-label="Panels"></div>
+    <p class="hint">Click a panel in the preview to edit its photo, zoom and pan. The cover updates live.</p>
   </section>
 </main>
+
+<div id="toast" role="status"></div>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
