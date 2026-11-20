@@ -300,7 +300,7 @@ function fitFont(ctx, text, font, maxW, start) {
 }
 
 function drawTitle(ctx, w, h, state, layout, scale) {
-  const grade = GRADES[state.grade];
+  const grade = GRADES[state.grade] || GRADES.sunset;
   const title = (state.title || 'LEONIDA GOLD').trim().toUpperCase();
   const top = layout.titleTop * h;
   // main title: Anton, sunset/neon gradient, 6-8 px black stroke, hard
