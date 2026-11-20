@@ -1,195 +1,203 @@
-// LEONIDA GOLD — Vice Cover Studio (v3.2): editor wiring.
-// Upload a photo per panel, pick layout + grade, edit the caption, export PNG
-// in three sizes. `?shot=` mode renders one shot for the screenshot pipeline.
-import { renderCover, exportPNG, SCENES, LAYOUTS, GRADES, CHARACTERS, TITLE_FONT } from './cover.js';
+// LEONIDA GOLD — Vice Cover Studio: the editor wiring.
+// Loads the sample portraits, keeps the editor state (layout, grade,
+// lettering, per-panel photo + crop), renders the live preview, handles
+// upload / panel picking / drag-pan / wheel-zoom, and exports PNGs in
+// 3 sizes. Also drives the ?shot= screenshot mode used for the entry shots.
 
-const $ = (id) => document.getElementById(id);
-const params = new URLSearchParams(location.search);
+import { SAMPLES, GRADES, LAYOUTS, drawCover, panelRects, loadImage, exportPNG } from './cover.js';
 
 const state = {
-  layout: params.get('layout') || 'poster',
-  grade: params.get('grade') || 'sunset',
-  title: params.get('title') || 'LEONIDA GOLD',
-  caption: 'chasing the golden hour',
-  quote: 'SUNSET HEIST OF THE YEAR — THE LEONIDA LEDGER',
-  photos: [null, null, null, null, null],
-  crops: [{}, {}, {}, {}, {}],
+  layout: 'poster',
+  grade: 'sunset',
+  title: 'LEONIDA GOLD',
+  script: 'chasing the golden hour',
+  callout: 'We take the city tonight.',
+  calloutBy: 'LUCIA',
+  photos: SAMPLES.map((s) => ({ src: s.file, zoom: 1, panX: 0, panY: 0 })),
   selected: 0,
 };
 
-const sampleImgs = [];
-async function loadSamples() {
-  for (const s of SCENES) {
-    const img = new Image();
-    img.src = `./samples/${s.id}.jpg`;
-    await new Promise((res) => { img.onload = res; img.onerror = res; });
-    sampleImgs.push(img);
-    state.photos[SCENES.indexOf(s)] = img;
+const images = new Map();
+const canvas = document.getElementById('preview');
+const ctx = canvas.getContext('2d');
+const params = new URLSearchParams(location.search);
+const shotMode = params.get('shot');
+
+async function ensureImages() {
+  for (const ph of state.photos) {
+    if (!images.has(ph.src)) images.set(ph.src, await loadImage(ph.src));
   }
 }
 
 function draw() {
-  const canvas = $('cover');
-  const ctx = canvas.getContext('2d');
-  renderCover(ctx, { ...state, W: canvas.width, H: canvas.height });
-  // panel picker labels
-  document.querySelectorAll('.panel-pick').forEach((b, i) => {
-    b.classList.toggle('on', i === state.selected);
-    b.textContent = `Panel ${i + 1} · ${CHARACTERS[i].tag}`;
-  });
+  const w = canvas.width, h = canvas.height;
+  drawCover(ctx, w, h, state, images);
 }
 
-function renderEditor() {
-  const canvas = $('cover');
-  const shot = params.get('shot');
-  if (shot === 'cover') {
-    // cover-only mode for the screenshot pipeline: no editor chrome
-    document.body.classList.add('shot-cover');
-    canvas.width = parseInt(params.get('w') || '1280', 10);
-    canvas.height = parseInt(params.get('h') || '720', 10);
-  } else {
-    canvas.width = 1280;
-    canvas.height = 720;
-  }
-  draw();
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+async function exportOne(w, h, name) {
+  const blob = await exportPNG(w, h, state, images);
+  if (blob) download(blob, name);
 }
 
 function buildControls() {
-  const lay = $('layouts');
+  const layouts = document.getElementById('layouts');
   for (const l of LAYOUTS) {
     const b = document.createElement('button');
+    b.className = 'btn' + (l.id === state.layout ? ' active' : '');
     b.type = 'button';
-    b.className = 'chip' + (l.id === state.layout ? ' on' : '');
     b.textContent = l.name;
-    b.onclick = () => {
-      state.layout = l.id;
-      document.querySelectorAll('#layouts .chip').forEach((c) => c.classList.remove('on'));
-      b.classList.add('on');
-      draw();
-    };
-    lay.appendChild(b);
+    b.onclick = () => { state.layout = l.id; buildControls(); draw(); };
+    layouts.appendChild(b);
   }
-  const gr = $('grades');
+  const grades = document.getElementById('grades');
   for (const g of GRADES) {
     const b = document.createElement('button');
+    b.className = 'swatch' + (g.id === state.grade ? ' sel' : '');
     b.type = 'button';
-    b.className = 'swatch' + (g.id === state.grade ? ' on' : '');
-    b.style.background = `linear-gradient(135deg, ${g.sky[0]}, ${g.sky[1]} 55%, ${g.sky[2]})`;
-    b.title = g.name;
-    b.setAttribute('aria-label', g.name);
-    b.onclick = () => {
-      state.grade = g.id;
-      document.querySelectorAll('#grades .swatch').forEach((c) => c.classList.remove('on'));
-      b.classList.add('on');
-      draw();
-    };
-    gr.appendChild(b);
+    b.style.background = g.sw;
+    b.textContent = g.name;
+    b.onclick = () => { state.grade = g.id; buildControls(); draw(); };
+    grades.appendChild(b);
   }
-  const picks = $('panels');
-  for (let i = 0; i < 5; i++) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'panel-pick';
-    b.onclick = () => { state.selected = i; draw(); };
-    picks.appendChild(b);
-  }
-  const thumbs = $('thumbs');
-  SCENES.forEach((s, i) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'thumb';
-    b.title = `${s.name} — ${CHARACTERS[i].tag}`;
+  const samples = document.getElementById('samples');
+  samples.innerHTML = '';
+  SAMPLES.forEach((s, i) => {
     const img = document.createElement('img');
-    img.src = `./samples/${s.id}.jpg`;
-    img.alt = s.name;
-    b.appendChild(img);
-    b.onclick = () => { state.selected = i; state.photos[i] = sampleImgs[i]; state.crops[i] = {}; draw(); };
-    thumbs.appendChild(b);
+    img.src = s.file;
+    img.alt = s.role;
+    img.title = s.role;
+    if (state.photos[state.selected] && state.photos[state.selected].src === s.file) img.classList.add('sel');
+    img.onclick = () => {
+      state.photos[state.selected] = { src: s.file, zoom: 1, panX: 0, panY: 0 };
+      ensureImages().then(() => { buildControls(); draw(); });
+    };
+    samples.appendChild(img);
+  });
+  const picker = document.getElementById('picker');
+  picker.innerHTML = '';
+  SAMPLES.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'btn' + (i === state.selected ? ' active' : '');
+    b.type = 'button';
+    b.textContent = `Panel ${i + 1} · ${s.role}`;
+    b.onclick = () => { state.selected = i; buildControls(); draw(); };
+    picker.appendChild(b);
   });
 }
 
 function wire() {
-  $('titleInput').addEventListener('input', (e) => { state.title = e.target.value.toUpperCase() || 'LEONIDA GOLD'; draw(); });
-  $('captionInput').addEventListener('input', (e) => { state.caption = e.target.value || 'chasing the golden hour'; draw(); });
-  $('upload').addEventListener('click', () => $('file').click());
-  $('file').addEventListener('change', (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const img = new Image();
-    img.onload = () => { state.photos[state.selected] = img; state.crops[state.selected] = {}; draw(); };
-    img.src = URL.createObjectURL(f);
-  });
-  $('useAll').addEventListener('click', () => {
-    const img = state.photos[state.selected];
-    if (!img) return;
-    for (let i = 0; i < 5; i++) { state.photos[i] = img; state.crops[i] = {}; }
+  document.getElementById('ex-1080').onclick = () => exportOne(1080, 1080, 'leonida-gold-1080x1080.png');
+  document.getElementById('ex-1350').onclick = () => exportOne(1080, 1350, 'leonida-gold-1080x1350.png');
+  document.getElementById('ex-1920').onclick = () => exportOne(1920, 1080, 'leonida-gold-1920x1080.png');
+  document.getElementById('ex-all').onclick = async () => {
+    await exportOne(1080, 1080, 'leonida-gold-1080x1080.png');
+    await exportOne(1080, 1350, 'leonida-gold-1080x1350.png');
+    await exportOne(1920, 1080, 'leonida-gold-1920x1080.png');
+  };
+  const fileInput = document.getElementById('file-input');
+  document.getElementById('upload-btn').onclick = () => fileInput.click();
+  fileInput.onchange = async () => {
+    const files = [...fileInput.files];
+    for (let k = 0; k < files.length; k++) {
+      const dataUrl = await new Promise((res) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.readAsDataURL(files[k]);
+      });
+      const idx = k === 0 ? state.selected : (state.selected + k) % 5;
+      state.photos[idx] = { src: dataUrl, zoom: 1, panX: 0, panY: 0 };
+    }
+    await ensureImages();
+    buildControls();
     draw();
-  });
-  $('resetSamples').addEventListener('click', () => {
-    SCENES.forEach((s, i) => { state.photos[i] = sampleImgs[i]; state.crops[i] = {}; });
+    fileInput.value = '';
+  };
+  document.getElementById('use-all-btn').onclick = async () => {
+    const src = state.photos[state.selected].src;
+    state.photos = state.photos.map(() => ({ src, zoom: 1, panX: 0, panY: 0 }));
+    await ensureImages();
     draw();
-  });
-  const canvas = $('cover');
+  };
+  document.getElementById('restore-btn').onclick = async () => {
+    state.photos = SAMPLES.map((s) => ({ src: s.file, zoom: 1, panX: 0, panY: 0 }));
+    await ensureImages();
+    buildControls();
+    draw();
+  };
+  document.getElementById('title-input').oninput = (e) => { state.title = e.target.value || 'LEONIDA GOLD'; draw(); };
+  document.getElementById('script-input').oninput = (e) => { state.script = e.target.value; draw(); };
+  document.getElementById('callout-input').oninput = (e) => { state.callout = e.target.value; draw(); };
+  document.getElementById('callout-by-input').oninput = (e) => { state.calloutBy = e.target.value; draw(); };
+
+  // Click a panel to select it; drag to pan its photo, wheel to zoom.
   let drag = null;
-  canvas.addEventListener('pointerdown', (e) => {
+  const toCanvas = (e) => {
     const r = canvas.getBoundingClientRect();
-    drag = { x: e.clientX - r.left, y: e.clientY - r.top, panel: state.selected };
-    canvas.setPointerCapture(e.pointerId);
+    return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) };
+  };
+  canvas.addEventListener('mousedown', (e) => {
+    const p = toCanvas(e);
+    const rects = panelRects(state.layout, canvas.width, canvas.height);
+    const hit = rects.find((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
+    if (hit) { state.selected = hit.p; buildControls(); }
+    drag = { x: p.x, y: p.y, rect: hit || null };
   });
-  canvas.addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    const r = canvas.getBoundingClientRect();
-    const dx = (e.clientX - r.left - drag.x) / r.width;
-    const dy = (e.clientY - r.top - drag.y) / r.height;
-    const c = state.crops[drag.panel] || {};
-    c.ox = (c.ox || 0) + dx * 2;
-    c.oy = (c.oy || 0) + dy * 2;
-    state.crops[drag.panel] = c;
-    drag.x = e.clientX - r.left;
-    drag.y = e.clientY - r.top;
+  window.addEventListener('mousemove', (e) => {
+    if (!drag || !drag.rect) return;
+    const p = toCanvas(e);
+    const ph = state.photos[drag.rect.p];
+    const img = images.get(ph.src);
+    if (!img) return;
+    const scale = Math.max(drag.rect.w / img.naturalWidth, drag.rect.h / img.naturalHeight) * (ph.zoom || 1);
+    ph.panX = (ph.panX || 0) - (p.x - drag.x) / scale;
+    ph.panY = (ph.panY || 0) - (p.y - drag.y) / scale;
+    drag.x = p.x;
+    drag.y = p.y;
     draw();
   });
-  canvas.addEventListener('pointerup', () => { drag = null; });
+  window.addEventListener('mouseup', () => { drag = null; });
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
-    const c = state.crops[state.selected] || {};
-    c.zoom = Math.min(3, Math.max(1, (c.zoom || 1) * (e.deltaY < 0 ? 1.1 : 0.9)));
-    state.crops[state.selected] = c;
+    const p = toCanvas(e);
+    const rects = panelRects(state.layout, canvas.width, canvas.height);
+    const hit = rects.find((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
+    if (!hit) return;
+    const ph = state.photos[hit.p];
+    ph.zoom = Math.min(3, Math.max(1, (ph.zoom || 1) * (e.deltaY < 0 ? 1.12 : 0.89)));
+    state.selected = hit.p;
+    buildControls();
     draw();
   }, { passive: false });
-  document.querySelectorAll('[data-export]').forEach((b) => {
-    b.addEventListener('click', async () => {
-      const [w, h] = b.dataset.export.split('x').map(Number);
-      const blob = await exportPNG(state, w, h);
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `leonida-gold-${w}x${h}.png`;
-      a.click();
-      $('status').textContent = `Exported ${w}×${h} PNG.`;
-    });
-  });
-  $('exportAll').addEventListener('click', async () => {
-    for (const [w, h] of [[1080, 1080], [1080, 1350], [1920, 1080]]) {
-      const blob = await exportPNG(state, w, h);
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `leonida-gold-${w}x${h}.png`;
-      a.click();
-      await new Promise((r) => setTimeout(r, 250));
-    }
-    $('status').textContent = 'Exported all 3 sizes.';
-  });
 }
 
-// test hook for the screenshot/benchmark pages
-window.exportPNG = (w, h) => exportPNG(state, w, h);
-window.__state = state;
-
-(async () => {
-  try { await document.fonts.load('16px Anton'); await document.fonts.ready; } catch (e) { /* fall back */ }
-  await loadSamples();
+async function boot() {
+  if (params.get('layout')) state.layout = params.get('layout');
+  if (params.get('grade')) state.grade = params.get('grade');
+  if (params.get('title')) state.title = params.get('title');
+  const w = parseInt(params.get('w') || '', 10);
+  const h = parseInt(params.get('h') || '', 10);
+  if (w && h) { canvas.width = w; canvas.height = h; }
+  try { await document.fonts.load('900 80px Anton'); } catch (e) { /* font falls back */ }
+  await document.fonts.ready;
+  await ensureImages();
+  if (shotMode === 'cover') {
+    document.body.classList.add('shot-cover');
+    draw();
+    return;
+  }
   buildControls();
   wire();
-  renderEditor();
-  document.title = 'shot-ready';
-})();
+  draw();
+  // Exposed for the export test page and for debugging.
+  window.exportPNG = (ew, eh) => exportPNG(ew, eh, state, images);
+}
+
+boot();

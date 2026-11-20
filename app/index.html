@@ -1,59 +1,69 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LEONIDA GOLD — Vice Cover Studio</title>
-<link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="topbar">
   <div class="brand">
-    <h1>LEONIDA GOLD</h1>
-    <p>VICE COVER STUDIO · YOUR PHOTO, OUR SUNSET</p>
+    <div class="brand-title">LEONIDA GOLD</div>
+    <div class="brand-sub">VICE COVER STUDIO &middot; YOUR PHOTO, OUR SUNSET</div>
   </div>
-  <div class="exports" role="group" aria-label="Export PNG">
-    <button type="button" data-export="1080x1080">PNG 1080 · 1080</button>
-    <button type="button" data-export="1080x1350">PNG 1080 · 1350</button>
-    <button type="button" data-export="1920x1080">PNG 1920 · 1080</button>
-    <button type="button" id="exportAll" class="hot">Export all 3 sizes</button>
+  <div class="exportbar" role="group" aria-label="Export">
+    <button id="ex-1080" class="exbtn" type="button">PNG 1080 &middot; 1080</button>
+    <button id="ex-1350" class="exbtn" type="button">PNG 1080 &middot; 1350</button>
+    <button id="ex-1920" class="exbtn" type="button">PNG 1920 &middot; 1080</button>
+    <button id="ex-all" class="exbtn primary" type="button">Export all 3 sizes</button>
   </div>
 </header>
-<main class="app">
-  <aside class="controls">
+<main class="shell">
+  <aside class="panel">
     <section>
-      <h2>1 · Photo</h2>
-      <p>Pick a panel below the preview, then give it a photo. “Use in all panels” fills every panel with the same photo.</p>
+      <h2>1 &middot; Photo</h2>
+      <p class="hint">Pick a panel below the preview, then give it a photo. &ldquo;Use in all panels&rdquo; fills every panel with the same photo.</p>
       <div class="row">
-        <button type="button" id="upload">Upload photo(s)</button>
-        <button type="button" id="useAll">Use in all panels</button>
+        <button id="upload-btn" class="btn" type="button">Upload photo(s)</button>
+        <button id="use-all-btn" class="btn" type="button">Use in all panels</button>
       </div>
-      <input id="file" type="file" accept="image/*" hidden>
-      <div id="thumbs" class="thumbs" aria-label="Sample scenes"></div>
-      <p class="fine">Samples are original illustrated Vice City scenes, each with its own character.</p>
-      <button type="button" id="resetSamples" class="ghost">Restore sample photos</button>
+      <input id="file-input" type="file" accept="image/*" multiple hidden>
+      <div id="samples" class="samples"></div>
+      <p class="hint">Samples are original AI-generated Vice City portraits, each with its own character.</p>
+      <button id="restore-btn" class="btn" type="button">Restore sample photos</button>
     </section>
     <section>
-      <h2>2 · Layout</h2>
+      <h2>2 &middot; Layout</h2>
       <div id="layouts" class="grid2"></div>
     </section>
     <section>
-      <h2>3 · Grade</h2>
+      <h2>3 &middot; Grade</h2>
       <div id="grades" class="swatches"></div>
     </section>
     <section>
-      <h2>4 · Lettering</h2>
-      <label>Title <input id="titleInput" type="text" maxlength="24" value="LEONIDA GOLD"></label>
-      <label>Script line <input id="captionInput" type="text" maxlength="40" value="chasing the golden hour"></label>
+      <h2>4 &middot; Lettering</h2>
+      <label class="field">Title
+        <input id="title-input" type="text" value="LEONIDA GOLD" maxlength="24">
+      </label>
+      <label class="field">Script line
+        <input id="script-input" type="text" value="chasing the golden hour" maxlength="48">
+      </label>
+      <label class="field">Callout
+        <input id="callout-input" type="text" value="We take the city tonight." maxlength="64">
+      </label>
+      <label class="field">Callout by
+        <input id="callout-by-input" type="text" value="LUCIA" maxlength="24">
+      </label>
     </section>
-    <p id="status" role="status"></p>
   </aside>
   <section class="stage">
-    <canvas id="cover" width="1280" height="720" aria-label="The cover preview"></canvas>
-    <div id="panels" class="panels" aria-label="Pick a panel to edit"></div>
+    <canvas id="preview" width="1280" height="720"></canvas>
+    <div id="picker" class="picker"></div>
     <p class="hint">Click a panel in the preview to edit its photo, zoom and pan. The cover updates live.</p>
   </section>
 </main>
-<script type="module" src="./src/main.js"></script>
+<script type="module" src="src/cover.js"></script>
+<script type="module" src="src/main.js"></script>
 </body>
 </html>
