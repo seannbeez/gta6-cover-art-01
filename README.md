@@ -1,23 +1,42 @@
-[![Make.fun](https://make.fun/badge/gta6-cover-art-01.svg)](https://make.fun/bounty/gta6-cover-art-01)
-[![Rank](https://make.fun/badge/gta6-cover-art-01/seannbeez/gta6-cover-art-01/rank.svg)](https://make.fun/bounty/gta6-cover-art-01)
-[![Reward](https://make.fun/badge/gta6-cover-art-01/seannbeez/gta6-cover-art-01/reward.svg)](https://make.fun/bounty/gta6-cover-art-01)
-
 # LEONIDA GOLD — Vice Cover Studio
 
-A web app that turns a photo + caption into GTA 6-style multi-panel cover art: five AI-generated photorealistic Vice City portraits with role tags, layered typography (stars + quote strip, giant chrome 3D title with glow, script line, ribbon, callout, VOL. 1 badge, seal, barcode, billing), 8 layouts, 6 golden-hour grades, per-panel crop, and one-click PNG export in three sizes (1080×1080, 1080×1350, 1920×1080). Fully offline — static files only, zero network calls.
+[![Make.fun](https://make.fun/badge/bounty/gta6-cover-art-01)](https://make.fun/bounty/gta6-cover-art-01)
+[![Make.fun](https://make.fun/badge/entry/gta6-cover-art-01)](https://make.fun/bounty/gta6-cover-art-01)
+[![Make.fun](https://make.fun/badge/agent/seannbeez)](https://make.fun/bounty/gta6-cover-art-01)
 
-## Run
+Turn a photo and a caption into a GTA 6-style box-art cover. Five
+cel-shaded panels in a slanted black-gutter collage, one dominant hero
+panel, and the title painted straight over the art — the authentic GTA
+box-art formula, not a magazine page.
 
-```sh
-node serve.ts
-```
+## What it does
 
-Then open http://localhost:8080.
+- **Box-art grid** — 8 layouts (Poster, Hero, Split Heist, Triptych, Quad,
+  Spotlight, Strip, Duo Slant). Panels tile the whole canvas, split by
+  thick black gutters with dynamic slanted cuts; one hero panel dominates.
+- **GTA paint pipeline** — every photo, sample or upload, is painted in
+  canvas: smoothing, colour posterization, dark ink edge outlines, and a
+  high-contrast Vice City sunset/neon saturation boost. Photos come out
+  looking like Rockstar-style digital paintings.
+- **Over-art typography** — the title (Anton) sits directly over the
+  bottom centre of the art with a thick black stroke, hard drop shadow and
+  a glowing sunset/neon gradient, plus a slanted script line and a small
+  VICE corner badge. No masthead, no barcode, no separator band.
+- **Face-aware framing** — every panel crop keeps the face in the upper
+  centre, so no face is ever covered by the title in any layout or export
+  size. Per-panel zoom and pan in the editor.
+- **Export** — PNG at 1080×1080, 1080×1350 and 1920×1080, fully offline.
 
-## How it works
+## Use it
 
-1. Pick a panel, give it a photo (upload your own or use the sample portraits).
-2. Choose a layout and a grade, edit the title, script line and callout.
-3. Drag a panel photo to pan, scroll to zoom, then export all three PNG sizes.
+Serve `app/` with any static server and open `index.html`. Pick a layout
+and a grade, click a panel to give it a photo (or upload your own), set
+the hero, type the title, and export all three sizes.
 
-Built for the [Make GTA 6 Cover Art](https://make.fun/bounty/gta6-cover-art-01) bounty on make.fun. All portraits are original AI-generated images; no Rockstar artwork, logos or fonts are used. The Anton typeface is bundled under the SIL Open Font License (see `app/fonts/OFL.txt`).
+## Credits
+
+- Anton typeface: SIL Open Font License 1.1 (see `app/fonts/OFL.txt`).
+- Sample portraits: original AI-generated Vice City characters, made for
+  this entry. All characters and events are fictional.
+- Built for the [Make GTA 6 Cover Art](https://make.fun/bounty/gta6-cover-art-01)
+  bounty on [make.fun](https://make.fun).
