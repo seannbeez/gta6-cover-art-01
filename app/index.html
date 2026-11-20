@@ -9,54 +9,54 @@
 <body>
 <header class="topbar">
   <div class="brand">
-    <h1>LEONIDA GOLD</h1>
-    <p>VICE COVER STUDIO &middot; YOUR PHOTO, OUR SUNSET</p>
+    <div class="brand-title">LEONIDA GOLD</div>
+    <div class="brand-sub">VICE COVER STUDIO · YOUR PHOTO, OUR SUNSET</div>
   </div>
   <div class="exports">
-    <button id="export-1080" type="button">PNG 1080 &times; 1080</button>
-    <button id="export-1350" type="button">PNG 1080 &times; 1350</button>
-    <button id="export-1920" type="button">PNG 1920 &times; 1080</button>
+    <button id="export-1080" type="button">PNG 1080 × 1080</button>
+    <button id="export-1350" type="button">PNG 1080 × 1350</button>
+    <button id="export-1920" type="button">PNG 1920 × 1080</button>
     <button id="export-all" type="button" class="primary">Export all 3 sizes</button>
   </div>
 </header>
 <main class="app">
   <aside class="controls">
-    <section>
-      <h2>1 &middot; Photo</h2>
-      <p>Pick a panel below the preview, then give it a photo. &ldquo;Use in all panels&rdquo; fills every panel with the same photo.</p>
-      <label class="filebtn">Upload photo(s)<input id="photo" type="file" accept="image/*" multiple></label>
-      <button id="use-all" type="button">Use in all panels</button>
-      <div id="samples" class="samples"></div>
-      <p class="note">Samples are original AI-generated Vice City portraits, each with its own character.</p>
+    <section class="card">
+      <h2>1 · Photo</h2>
+      <p>Pick a panel, then give it a photo. “Use in all panels” fills every panel.</p>
+      <div class="row">
+        <label class="upload">Upload photo(s)
+          <input id="photo" type="file" accept="image/*" multiple>
+        </label>
+        <button id="use-all" type="button">Use in all panels</button>
+      </div>
+      <div id="thumbs" class="thumbs"></div>
       <button id="restore" type="button">Restore sample photos</button>
     </section>
-    <section>
-      <h2>2 &middot; Layout</h2>
+    <section class="card">
+      <h2>2 · Layout</h2>
       <div id="layouts" class="grid2"></div>
     </section>
-    <section>
-      <h2>3 &middot; Grade</h2>
+    <section class="card">
+      <h2>3 · Grade</h2>
       <div id="grades" class="grid3"></div>
+      <label class="slider">Panel zoom
+        <input id="zoom" type="range" min="0.9" max="2" step="0.05" value="1">
+      </label>
+      <p class="hint">Drag on the preview to pan the selected panel's photo.</p>
     </section>
-    <section>
-      <h2>4 &middot; Title</h2>
-      <label>Title <input id="title" type="text" maxlength="24" value="LEONIDA GOLD"></label>
-      <label>Sub-title <input id="subtitle" type="text" maxlength="40" value="chasing the golden hour"></label>
-      <label>Quote <input id="quote" type="text" maxlength="60" value="We take the city tonight. — LUCIA"></label>
-    </section>
-    <section>
-      <h2>5 &middot; Selected panel</h2>
-      <p id="selected-name">Panel 1 &middot; THE WHEELMAN</p>
-      <label>Zoom <input id="zoom" type="range" min="1" max="1.8" step="0.05" value="1"></label>
-      <label>Pan left / right <input id="panx" type="range" min="-0.2" max="0.2" step="0.01" value="0"></label>
-      <label>Pan up / down <input id="pany" type="range" min="-0.2" max="0.2" step="0.01" value="0"></label>
-      <p id="status" role="status"></p>
+    <section class="card">
+      <h2>Caption</h2>
+      <input id="caption" type="text" maxlength="24" value="LEONIDA GOLD">
     </section>
   </aside>
-  <section class="stage">
-    <div class="preview"><canvas id="cover" width="1280" height="720" aria-label="The cover"></canvas></div>
-    <div id="panel-chips" class="chips"></div>
+  <section class="preview">
+    <div class="canvas-wrap">
+      <canvas id="cover" width="1280" height="720" aria-label="The cover"></canvas>
+    </div>
+    <div id="chips" class="chips"></div>
     <p class="hint">Click a panel in the preview to edit its photo, zoom and pan. The cover updates live.</p>
+    <p id="status" role="status"></p>
   </section>
 </main>
 <script type="module" src="./src/main.js"></script>

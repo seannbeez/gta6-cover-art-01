@@ -1,545 +1,524 @@
-// LEONIDA GOLD — Vice Cover Studio.
-// Draws GTA-style multi-panel cover art: a tight collage of panels split by thick
-// slanted black gutters, one dominant hero panel, and the title painted straight
-// over the art. Every photo first passes through the Vice Paint filter: strong
-// smoothing, luminance-only posterization (never per-channel RGB, so skin stays
-// clean), a warm sunset blend, and a thin ink outline.
+// LEONIDA GOLD — Vice Cover Studio: the cover renderer.
+//
+// Authentic GTA box-art collage: full-canvas panels split by thick black slanted
+// gutters, one dominant hero panel, over-art Anton title, role tags per panel.
+// Every photo (sample or user-uploaded) runs through the Vice Paint pipeline:
+// strong multi-pass smoothing, luminance-only posterization (hue never shifts,
+// so skin stays natural), a 60% blend over the warm-graded original, and a thin
+// Sobel ink outline. The result reads as a flat Rockstar-style vector painting.
 
-// ---------------------------------------------------------------------------
-// Data: the five characters, the grades, the layouts.
-// ---------------------------------------------------------------------------
+export const GRADES = {
+  sunset: {
+    name: 'Vice Sunset',
+    title: ['#ffd76a', '#ff9a5c', '#ff5e8a'],
+    warm: 'rgba(255, 150, 70, 0.34)',
+    sub: '#fff3d6',
+  },
+  gold: {
+    name: 'Palm Gold',
+    title: ['#ffedb0', '#ffc44d', '#ff9e2c'],
+    warm: 'rgba(255, 190, 70, 0.36)',
+    sub: '#fff8e0',
+  },
+  neon: {
+    name: 'Neon Nights',
+    title: ['#ffc4f2', '#ff7ae0', '#c65cff'],
+    warm: 'rgba(210, 90, 255, 0.30)',
+    sub: '#ffe9fb',
+  },
+};
 
-/** The five sample characters. ax/ay is the face anchor (face centre) in the
- * source photo, measured from the generated portraits; fb is the face bottom
- * (chin) fraction — the painter keeps everything above fb clear of the title. */
+// The five crew members. fx/fy = face centre as a fraction of the photo,
+// fb = chin as a fraction of the photo height. Measured from the portraits
+// shipped in app/samples/ (all 1920x1280, face large and centred).
 export const PANELS = [
-  { id: 'wheelman', role: 'THE WHEELMAN', place: 'OCEAN DR', file: 'boulevard.jpg', ax: 0.52, ay: 0.35, fb: 0.62 },
-  { id: 'lookout', role: 'THE LOOKOUT', place: 'PIER 9', file: 'pier.jpg', ax: 0.50, ay: 0.37, fb: 0.62 },
-  { id: 'dealer', role: 'THE DEALER', place: 'DOWNTOWN', file: 'skyline.jpg', ax: 0.50, ay: 0.30, fb: 0.50 },
-  { id: 'runner', role: 'THE RUNNER', place: 'NEON ROW', file: 'street.jpg', ax: 0.58, ay: 0.29, fb: 0.48 },
-  { id: 'queen', role: 'THE QUEEN', place: 'MARINA', file: 'marina.jpg', ax: 0.50, ay: 0.34, fb: 0.55 },
+  { key: 'boulevard', role: 'THE WHEELMAN', place: 'OCEAN DR', fx: 0.52, fy: 0.36, fb: 0.58 },
+  { key: 'pier', role: 'THE LOOKOUT', place: 'PIER 9', fx: 0.52, fy: 0.36, fb: 0.62 },
+  { key: 'skyline', role: 'THE DEALER', place: 'DOWNTOWN', fx: 0.52, fy: 0.33, fb: 0.60 },
+  { key: 'street', role: 'THE RUNNER', place: 'NEON ROW', fx: 0.55, fy: 0.30, fb: 0.52 },
+  { key: 'marina', role: 'THE QUEEN', place: 'MARINA', fx: 0.52, fy: 0.36, fb: 0.60 },
 ];
 
-export const PANEL_BY_ID = Object.fromEntries(PANELS.map((p) => [p.id, p]));
-
-/** Colour grades. title is the two stops of the title gradient. */
-export const GRADES = {
-  sunset: { key: 'sunset', name: 'Vice Sunset', title: ['#ffd76a', '#ff5e8a'], warm: 1.0, sat: 1.12 },
-  gold: { key: 'gold', name: 'Palm Gold', title: ['#ffe9a3', '#ff9a3d'], warm: 1.06, sat: 1.10 },
-  neon: { key: 'neon', name: 'Neon Nights', title: ['#c9a7ff', '#ff4fd8'], warm: 0.96, sat: 1.18 },
-};
-
-/** Unknown grade keys fall back to the default sunset grade (never crash). */
-export function gradeOf(key) {
-  return GRADES[key] || GRADES.sunset;
-}
-
-/**
- * Layouts. Every layout tiles the whole canvas: each point belongs to a panel,
- * so no black void can ever show behind the title. Each panel entry is
- * { id, pts (unit-space polygon), fy (face height fraction in the panel),
- *   zoom (extra zoom), fx (face width fraction, default 0.5) }.
- * titleTop is the unit y where the main title begins.
- */
+// One layout = five polygons (unit coords, indexed by PANELS order) plus the
+// hero panel index, where the title sits, and per-panel framing overrides.
+// The bottom-row panels always meet at a centre diagonal seam, so no black
+// void ever sits behind the title.
 export const LAYOUTS = {
   poster: {
-    key: 'poster', name: 'Poster', titleTop: 0.84,
-    panels: [
-      { id: 'lookout', pts: [[0, 0], [0.30, 0], [0.27, 0.55], [0, 0.55]], fy: 0.34, zoom: 1.05 },
-      { id: 'wheelman', pts: [[0.30, 0], [0.70, 0], [0.66, 0.55], [0.27, 0.55]], fy: 0.30, zoom: 1.12 },
-      { id: 'dealer', pts: [[0.70, 0], [1, 0], [1, 0.55], [0.66, 0.55]], fy: 0.34, zoom: 1.05 },
-      { id: 'runner', pts: [[0, 0.55], [0.47, 0.55], [0.56, 1], [0, 1]], fy: 0.30, zoom: 1.0 },
-      { id: 'queen', pts: [[0.47, 0.55], [1, 0.55], [1, 1], [0.56, 1]], fy: 0.26, zoom: 1.05 },
+    name: 'Poster', hero: 0, titleTop: 0.80, titleSize: 0.17,
+    polys: [
+      [[0.30, 0], [0.70, 0], [0.66, 0.52], [0.26, 0.52]],
+      [[0, 0], [0.30, 0], [0.26, 0.52], [0, 0.52]],
+      [[0.70, 0], [1, 0], [1, 0.52], [0.66, 0.52]],
+      [[0, 0.52], [0.52, 0.52], [0.38, 1], [0, 1]],
+      [[0.52, 0.52], [1, 0.52], [1, 1], [0.38, 1]],
     ],
+    frame: { 4: { z: 1.05, ay: 0.26 } },
   },
   hero: {
-    key: 'hero', name: 'Hero', titleTop: 0.84,
-    panels: [
-      { id: 'wheelman', pts: [[0, 0], [1, 0], [1, 0.50], [0, 0.50]], fy: 0.30, zoom: 1.10 },
-      { id: 'lookout', pts: [[0, 0.50], [0.50, 0.50], [0.47, 0.72], [0, 0.72]], fy: 0.32, zoom: 1.0 },
-      { id: 'dealer', pts: [[0.50, 0.50], [1, 0.50], [1, 0.72], [0.47, 0.72]], fy: 0.32, zoom: 1.0 },
-      { id: 'runner', pts: [[0, 0.72], [0.46, 0.72], [0.55, 1], [0, 1]], fy: 0.14, zoom: 1.2 },
-      { id: 'queen', pts: [[0.46, 0.72], [1, 0.72], [1, 1], [0.55, 1]], fy: 0.08, zoom: 1.3 },
+    name: 'Hero', hero: 0, titleTop: 0.86, titleSize: 0.15,
+    polys: [
+      [[0, 0], [1, 0], [1, 0.55], [0, 0.55]],
+      [[0, 0.55], [0.52, 0.55], [0.46, 0.70], [0, 0.70]],
+      [[0.52, 0.55], [1, 0.55], [1, 0.70], [0.46, 0.70]],
+      [[0, 0.70], [0.54, 0.70], [0.44, 1], [0, 1]],
+      [[0.54, 0.70], [1, 0.70], [1, 1], [0.44, 1]],
     ],
+    frame: { 1: { z: 1.0, ay: 0.42 }, 2: { z: 1.1, ay: 0.42 }, 3: { z: 1.3, ay: 0.30 }, 4: { z: 1.3, ay: 0.28 } },
   },
   split: {
-    key: 'split', name: 'Split Heist', titleTop: 0.84,
-    panels: [
-      { id: 'wheelman', pts: [[0, 0], [0.60, 0], [0.46, 0.58], [0, 0.64]], fy: 0.30, zoom: 1.10 },
-      { id: 'dealer', pts: [[0.60, 0], [1, 0], [1, 0.34], [0.52, 0.34]], fy: 0.34, zoom: 1.0 },
-      { id: 'queen', pts: [[0.52, 0.34], [1, 0.34], [1, 0.58], [0.48, 0.58]], fy: 0.34, zoom: 1.0 },
-      { id: 'runner', pts: [[0.48, 0.58], [1, 0.58], [1, 1], [0.56, 1]], fy: 0.28, zoom: 1.0 },
-      { id: 'lookout', pts: [[0, 0.64], [0.46, 0.58], [0.48, 0.58], [0.56, 1], [0, 1]], fy: 0.30, zoom: 1.15 },
+    name: 'Split Heist', hero: 0, titleTop: 0.86, titleSize: 0.17,
+    polys: [
+      [[0, 0], [0.56, 0], [0.50, 0.62], [0, 0.62]],
+      [[0, 0.62], [0.50, 0.62], [0.46, 1], [0, 1]],
+      [[0.56, 0], [1, 0], [1, 0.34], [0.52, 0.34]],
+      [[0.48, 0.64], [1, 0.64], [1, 1], [0.46, 1]],
+      [[0.52, 0.34], [1, 0.34], [1, 0.64], [0.48, 0.64]],
     ],
+    frame: { 1: { z: 1.15, ay: 0.30, fb: 0.71 }, 3: { z: 1.1, ay: 0.32 } },
   },
   triptych: {
-    key: 'triptych', name: 'Triptych', titleTop: 0.84,
-    panels: [
-      { id: 'lookout', pts: [[0, 0], [0.32, 0], [0.28, 0.55], [0, 0.55]], fy: 0.32, zoom: 1.0 },
-      { id: 'wheelman', pts: [[0.32, 0], [0.68, 0], [0.64, 0.55], [0.28, 0.55]], fy: 0.30, zoom: 1.10 },
-      { id: 'dealer', pts: [[0.68, 0], [1, 0], [1, 0.55], [0.64, 0.55]], fy: 0.32, zoom: 1.0 },
-      { id: 'runner', pts: [[0, 0.55], [0.46, 0.55], [0.55, 1], [0, 1]], fy: 0.32, zoom: 1.0 },
-      { id: 'queen', pts: [[0.46, 0.55], [1, 0.55], [1, 1], [0.55, 1]], fy: 0.32, zoom: 1.0 },
+    name: 'Triptych', hero: 0, titleTop: 0.84, titleSize: 0.15,
+    polys: [
+      [[0.36, 0], [0.62, 0], [0.58, 1], [0.32, 1]],
+      [[0, 0], [0.20, 0], [0.16, 1], [0, 1]],
+      [[0.62, 0], [0.82, 0], [0.78, 1], [0.58, 1]],
+      [[0.20, 0], [0.36, 0], [0.32, 1], [0.16, 1]],
+      [[0.82, 0], [1, 0], [1, 1], [0.78, 1]],
     ],
+    frame: {},
   },
   quad: {
-    key: 'quad', name: 'Quad', titleTop: 0.84,
-    panels: [
-      { id: 'wheelman', pts: [[0, 0], [0.52, 0], [0.48, 0.52], [0, 0.52]], fy: 0.30, zoom: 1.05 },
-      { id: 'dealer', pts: [[0.52, 0], [1, 0], [1, 0.52], [0.48, 0.52]], fy: 0.30, zoom: 1.05 },
-      { id: 'lookout', pts: [[0, 0.52], [0.46, 0.52], [0.50, 1], [0, 1]], fy: 0.32, zoom: 1.0 },
-      { id: 'queen', pts: [[0.46, 0.52], [1, 0.52], [1, 1], [0.50, 1]], fy: 0.32, zoom: 1.0 },
-      { id: 'runner', pts: [[0.50, 0.36], [0.67, 0.52], [0.50, 0.68], [0.33, 0.52]], fy: 0.38, zoom: 1.0 },
+    name: 'Quad', hero: 0, titleTop: 0.82, titleSize: 0.16,
+    polys: [
+      [[0, 0], [0.55, 0], [0.50, 0.50], [0, 0.50]],
+      [[0, 0.50], [0.50, 0.50], [0.46, 1], [0, 1]],
+      [[0.55, 0], [1, 0], [1, 0.50], [0.50, 0.50]],
+      [[0.50, 0.50], [0.74, 0.50], [0.70, 1], [0.46, 1]],
+      [[0.74, 0.50], [1, 0.50], [1, 1], [0.70, 1]],
     ],
+    frame: { 1: { z: 1.1, ay: 0.34 }, 3: { z: 1.1, ay: 0.32 }, 4: { z: 1.1, ay: 0.32 } },
   },
   spotlight: {
-    key: 'spotlight', name: 'Spotlight', titleTop: 0.86, titleCap: 0.10,
-    panels: [
-      { id: 'wheelman', pts: [[0, 0], [1, 0], [1, 0.64], [0, 0.60]], fy: 0.30, zoom: 1.0 },
-      { id: 'lookout', pts: [[0, 0.60], [0.26, 0.62], [0.24, 1], [0, 1]], fy: 0.34, zoom: 1.0 },
-      { id: 'dealer', pts: [[0.26, 0.62], [0.51, 0.63], [0.49, 1], [0.24, 1]], fy: 0.34, zoom: 1.0 },
-      { id: 'runner', pts: [[0.51, 0.63], [0.76, 0.64], [0.74, 1], [0.49, 1]], fy: 0.34, zoom: 1.0 },
-      { id: 'queen', pts: [[0.76, 0.64], [1, 0.64], [1, 1], [0.74, 1]], fy: 0.34, zoom: 1.0 },
+    name: 'Spotlight', hero: 0, titleTop: 0.86, titleSize: 0.10,
+    polys: [
+      [[0, 0], [1, 0], [1, 0.62], [0, 0.62]],
+      [[0, 0.62], [0.27, 0.62], [0.24, 1], [0, 1]],
+      [[0.27, 0.62], [0.51, 0.62], [0.48, 1], [0.24, 1]],
+      [[0.51, 0.62], [0.76, 0.62], [0.73, 1], [0.48, 1]],
+      [[0.76, 0.62], [1, 0.62], [1, 1], [0.73, 1]],
     ],
+    frame: { 1: { z: 1.15, ay: 0.30 }, 2: { z: 1.15, ay: 0.30 }, 3: { z: 1.15, ay: 0.30 }, 4: { z: 1.15, ay: 0.30 } },
   },
   strip: {
-    key: 'strip', name: 'Strip', titleTop: 0.84,
-    panels: [
-      { id: 'wheelman', pts: [[0, 0], [0.62, 0], [0.60, 0.55], [0, 0.55]], fy: 0.30, zoom: 1.05 },
-      { id: 'lookout', pts: [[0.62, 0], [1, 0], [1, 0.28], [0.60, 0.28]], fy: 0.38, zoom: 1.0 },
-      { id: 'dealer', pts: [[0.60, 0.28], [1, 0.28], [1, 0.55], [0.60, 0.55]], fy: 0.38, zoom: 1.0 },
-      { id: 'runner', pts: [[0, 0.55], [0.46, 0.55], [0.55, 1], [0, 1]], fy: 0.32, zoom: 1.0 },
-      { id: 'queen', pts: [[0.46, 0.55], [1, 0.55], [1, 1], [0.55, 1]], fy: 0.32, zoom: 1.0 },
+    name: 'Strip', hero: 0, titleTop: 0.84, titleSize: 0.15,
+    polys: [
+      [[0, 0], [0.34, 0], [0.28, 1], [0, 1]],
+      [[0.34, 0], [0.50, 0], [0.46, 1], [0.28, 1]],
+      [[0.50, 0], [0.66, 0], [0.62, 1], [0.46, 1]],
+      [[0.66, 0], [0.83, 0], [0.79, 1], [0.62, 1]],
+      [[0.83, 0], [1, 0], [1, 1], [0.79, 1]],
     ],
+    frame: {},
   },
   duo: {
-    key: 'duo', name: 'Duo Slant', titleTop: 0.84,
-    panels: [
-      { id: 'wheelman', pts: [[0, 0], [0.56, 0], [0.44, 0.55], [0, 0.55]], fy: 0.30, zoom: 1.10 },
-      { id: 'dealer', pts: [[0.56, 0], [1, 0], [1, 0.55], [0.44, 0.55]], fy: 0.30, zoom: 1.10 },
-      { id: 'lookout', pts: [[0, 0.55], [0.33, 0.55], [0.36, 1], [0, 1]], fy: 0.32, zoom: 1.0 },
-      { id: 'runner', pts: [[0.33, 0.55], [0.66, 0.55], [0.70, 1], [0.36, 1]], fy: 0.32, zoom: 1.0 },
-      { id: 'queen', pts: [[0.66, 0.55], [1, 0.55], [1, 1], [0.70, 1]], fy: 0.32, zoom: 1.0 },
+    name: 'Duo Slant', hero: 0, titleTop: 0.82, titleSize: 0.16,
+    polys: [
+      [[0, 0], [0.56, 0], [0.44, 1], [0, 1]],
+      [[0.56, 0], [1, 0], [1, 0.24], [0.54, 0.24]],
+      [[0.54, 0.24], [1, 0.24], [1, 0.52], [0.50, 0.52]],
+      [[0.50, 0.52], [1, 0.52], [1, 0.78], [0.47, 0.78]],
+      [[0.47, 0.78], [1, 0.78], [1, 1], [0.44, 1]],
     ],
+    frame: { 3: { z: 1.1, ay: 0.32 }, 4: { z: 1.1, ay: 0.32 } },
   },
 };
 
-export function layoutOf(key) {
-  return LAYOUTS[key] || LAYOUTS.poster;
+const paintCache = new Map();
+
+function makeCanvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w));
+  c.height = Math.max(1, Math.round(h));
+  return c;
 }
 
-// ---------------------------------------------------------------------------
-// The Vice Paint filter.
-// Smooth painted look with natural skin: multi-pass blur, luminance-only
-// posterization, a warm blend with the graded original, thin ink edges.
-// ---------------------------------------------------------------------------
-
-const PAINT_CACHE = new Map();
-const WORK_LONG = 960; // filter runs at most 960 px on the long side, then scales up
-const PAINT_BLEND = 0.60; // painted layer over the warm original (55-65% band)
-
-/** Separable box blur, radius r, in place on an ImageData's RGB channels. */
-function boxBlur(data, w, h, r) {
-  const tmp = new Uint8ClampedArray(data.length);
-  const win = 2 * r + 1;
-  for (let y = 0; y < h; y++) {
-    let sr = 0, sg = 0, sb = 0;
-    const row = y * w * 4;
-    for (let x = -r; x <= r; x++) {
-      const cx = Math.min(w - 1, Math.max(0, x));
-      const o = row + cx * 4;
-      sr += data[o]; sg += data[o + 1]; sb += data[o + 2];
-    }
-    for (let x = 0; x < w; x++) {
-      const o = row + x * 4;
-      tmp[o] = sr / win; tmp[o + 1] = sg / win; tmp[o + 2] = sb / win; tmp[o + 3] = data[o + 3];
-      const xa = Math.min(w - 1, Math.max(0, x - r));
-      const xb = Math.min(w - 1, Math.max(0, x + r + 1));
-      const oa = row + xa * 4, ob = row + xb * 4;
-      sr += data[ob] - data[oa]; sg += data[ob + 1] - data[oa + 1]; sb += data[ob + 2] - data[oa + 2];
+// Horizontal span of a polygon at height y (unit coords): [minX, maxX] or null.
+function spanAtY(poly, y) {
+  let min = Infinity, max = -Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    if ((a[1] <= y && b[1] > y) || (b[1] <= y && a[1] > y)) {
+      const t = (y - a[1]) / (b[1] - a[1]);
+      const x = a[0] + t * (b[0] - a[0]);
+      if (x < min) min = x;
+      if (x > max) max = x;
     }
   }
-  for (let x = 0; x < w; x++) {
-    let sr = 0, sg = 0, sb = 0;
-    for (let y = -r; y <= r; y++) {
-      const cy = Math.min(h - 1, Math.max(0, y));
-      const o = (cy * w + x) * 4;
-      sr += tmp[o]; sg += tmp[o + 1]; sb += tmp[o + 2];
-    }
-    for (let y = 0; y < h; y++) {
-      const o = (y * w + x) * 4;
-      data[o] = sr / win; data[o + 1] = sg / win; data[o + 2] = sb / win;
-      const ya = Math.min(h - 1, Math.max(0, y - r));
-      const yb = Math.min(h - 1, Math.max(0, y + r + 1));
-      const oa = (ya * w + x) * 4, ob = (yb * w + x) * 4;
-      sr += tmp[ob] - tmp[oa]; sg += tmp[ob + 1] - tmp[oa + 1]; sb += tmp[ob + 2] - tmp[oa + 2];
-    }
-  }
+  return min === Infinity ? null : [min, max];
 }
 
-/**
- * Paints an image into a canvas: warm-graded, heavily smoothed, luminance
- * posterized, blended back with the warm original, thin ink outline.
- * Returns a canvas with the same aspect as the source.
- */
-export function paintPhoto(img, grade) {
-  const g = gradeOf(grade && grade.key ? grade.key : grade);
-  const cacheKey = (img.currentSrc || img.src || '') + '|' + g.key;
-  const hit = PAINT_CACHE.get(cacheKey);
-  if (hit) return hit;
-
-  const iw = img.naturalWidth || img.width;
-  const ih = img.naturalHeight || img.height;
-  const scale = Math.min(1, WORK_LONG / Math.max(iw, ih));
-  const w = Math.max(2, Math.round(iw * scale));
-  const h = Math.max(2, Math.round(ih * scale));
-  const work = document.createElement('canvas');
-  work.width = w; work.height = h;
-  const wctx = work.getContext('2d', { willReadFrequently: true });
-  wctx.drawImage(img, 0, 0, w, h);
-  const image = wctx.getImageData(0, 0, w, h);
-  const d = image.data;
-  const n = w * h;
-
-  // 1. Warm sunset grade on the original (the base we blend back in).
-  const warmR = 1.05 * g.warm, warmB = 0.96 / Math.sqrt(g.warm);
-  const warmBase = new Uint8ClampedArray(d);
-  for (let i = 0; i < n; i++) {
-    const o = i * 4;
-    warmBase[o] = Math.min(255, d[o] * warmR);
-    warmBase[o + 1] = d[o + 1];
-    warmBase[o + 2] = Math.min(255, d[o + 2] * warmB);
-  }
-
-  // 2. Strong smoothing: three passes of a radius-4 box blur (near-Gaussian).
-  for (let p = 0; p < 3; p++) boxBlur(d, w, h, 4);
-
-  // 3. Luminance-only posterization: quantize brightness into 6 steps and
-  // rescale each pixel's RGB by the same factor, so hue never shifts and no
-  // green/red channel blotches can form. Keep the blurred luminance for edges.
-  const lum = new Float32Array(n);
-  const LEVELS = 6;
-  for (let i = 0; i < n; i++) {
-    const o = i * 4;
-    const l = 0.299 * d[o] + 0.587 * d[o + 1] + 0.114 * d[o + 2];
-    lum[i] = l;
-    const lq = (Math.floor((l / 255) * LEVELS) + 0.5) / LEVELS * 255;
-    const s = Math.min(1.9, Math.max(0.55, lq / Math.max(1, l)));
-    d[o] *= s; d[o + 1] *= s; d[o + 2] *= s;
-  }
-
-  // 4. Blend the painted layer with the warm original (60 / 40), then a mild
-  // saturation lift so the flat colours stay vivid without going muddy.
-  const sat = g.sat;
-  for (let i = 0; i < n; i++) {
-    const o = i * 4;
-    let r = d[o] * PAINT_BLEND + warmBase[o] * (1 - PAINT_BLEND);
-    let gg = d[o + 1] * PAINT_BLEND + warmBase[o + 1] * (1 - PAINT_BLEND);
-    let b = d[o + 2] * PAINT_BLEND + warmBase[o + 2] * (1 - PAINT_BLEND);
-    const l = 0.299 * r + 0.587 * gg + 0.114 * b;
-    d[o] = r + (r - l) * (sat - 1);
-    d[o + 1] = gg + (gg - l) * (sat - 1);
-    d[o + 2] = b + (b - l) * (sat - 1);
-  }
-
-  // 5. Thin ink outline: Sobel on the blurred luminance; strong edges darken.
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const i = y * w + x;
-      const gx = -lum[i - w - 1] - 2 * lum[i - 1] - lum[i + w - 1]
-        + lum[i - w + 1] + 2 * lum[i + 1] + lum[i + w + 1];
-      const gy = -lum[i - w - 1] - 2 * lum[i - w] - lum[i - w + 1]
-        + lum[i + w - 1] + 2 * lum[i + w] + lum[i + w + 1];
-      const mag = Math.abs(gx) + Math.abs(gy);
-      if (mag > 110) {
-        const o = i * 4;
-        d[o] *= 0.45; d[o + 1] *= 0.45; d[o + 2] *= 0.45;
-      }
+// Bottom edge y of a polygon at horizontal position x (unit coords).
+function polyBottomAt(poly, x) {
+  let best = -Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    if ((a[0] <= x && b[0] > x) || (b[0] <= x && a[0] > x)) {
+      const t = (x - a[0]) / (b[0] - a[0]);
+      const y = a[1] + t * (b[1] - a[1]);
+      if (y > best) best = y;
     }
   }
-
-  wctx.putImageData(image, 0, 0);
-  PAINT_CACHE.set(cacheKey, work);
-  return work;
+  return best === -Infinity ? 1 : best;
 }
 
-// ---------------------------------------------------------------------------
-// Drawing.
-// ---------------------------------------------------------------------------
-
-/** Trace a unit-space polygon onto ctx at canvas size. */
-function tracePoly(ctx, pts, w, h) {
-  ctx.beginPath();
-  ctx.moveTo(pts[0][0] * w, pts[0][1] * h);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] * w, pts[i][1] * h);
-  ctx.closePath();
-}
-
-function polyBBox(pts, w, h) {
-  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  for (const [px, py] of pts) {
+function polyBBox(poly, w, h) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [px, py] of poly) {
     x0 = Math.min(x0, px * w); y0 = Math.min(y0, py * h);
     x1 = Math.max(x1, px * w); y1 = Math.max(y1, py * h);
   }
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
-/** Horizontal span [xLeft, xRight] of a unit-space polygon at a unit y. */
-function spanAtY(pts, yFrac, w, h) {
-  const y = yFrac * h;
-  const xs = [];
-  for (let i = 0; i < pts.length; i++) {
-    const [x1, y1] = pts[i];
-    const [x2, y2] = pts[(i + 1) % pts.length];
-    if ((y1 * h <= y && y < y2 * h) || (y2 * h <= y && y < y1 * h)) {
-      const t = (y - y1 * h) / ((y2 - y1) * h);
-      xs.push((x1 + t * (x2 - x1)) * w);
-    }
-  }
-  if (xs.length < 2) return null;
-  return [Math.min(...xs), Math.max(...xs)];
+function tracePoly(ctx, poly, w, h) {
+  ctx.beginPath();
+  ctx.moveTo(poly[0][0] * w, poly[0][1] * h);
+  for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0] * w, poly[i][1] * h);
+  ctx.closePath();
 }
 
-/** Lowest (smallest) bottom y of a unit-space polygon across [x0, x1] in px. */
-function polyBottomAt(pts, x0, x1, w, h) {
-  let bottom = Infinity;
-  for (const x of [x0, (x0 + x1) / 2, x1]) {
-    const ys = [];
-    for (let i = 0; i < pts.length; i++) {
-      const [px1, py1] = pts[i];
-      const [px2, py2] = pts[(i + 1) % pts.length];
-      if ((px1 * w <= x && x < px2 * w) || (px2 * w <= x && x < px1 * w)) {
-        const t = (x - px1 * w) / ((px2 - px1) * w);
-        ys.push((py1 + t * (py2 - py1)) * h);
+// Separable box blur (radius r) on ImageData, sliding-window O(n) per pass.
+function boxBlur(data, w, h, radius) {
+  const tmp = new Uint8ClampedArray(data.length);
+  const div = 2 * radius + 1;
+  for (let y = 0; y < h; y++) {
+    let r = 0, g = 0, b = 0;
+    const row = y * w * 4;
+    for (let x = -radius; x <= radius; x++) {
+      const i = row + Math.max(0, Math.min(w - 1, x)) * 4;
+      r += data[i]; g += data[i + 1]; b += data[i + 2];
+    }
+    for (let x = 0; x < w; x++) {
+      const i = row + x * 4;
+      tmp[i] = r / div; tmp[i + 1] = g / div; tmp[i + 2] = b / div; tmp[i + 3] = 255;
+      const o = row + Math.max(0, Math.min(w - 1, x - radius)) * 4;
+      const n = row + Math.max(0, Math.min(w - 1, x + radius + 1)) * 4;
+      r += data[n] - data[o]; g += data[n + 1] - data[o + 1]; b += data[n + 2] - data[o + 2];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let r = 0, g = 0, b = 0;
+    for (let y = -radius; y <= radius; y++) {
+      const i = (Math.max(0, Math.min(h - 1, y)) * w + x) * 4;
+      r += tmp[i]; g += tmp[i + 1]; b += tmp[i + 2];
+    }
+    for (let y = 0; y < h; y++) {
+      const i = (y * w + x) * 4;
+      data[i] = r / div; data[i + 1] = g / div; data[i + 2] = b / div; data[i + 3] = 255;
+      const o = (Math.max(0, Math.min(h - 1, y - radius)) * w + x) * 4;
+      const n = (Math.max(0, Math.min(h - 1, y + radius + 1)) * w + x) * 4;
+      r += tmp[n] - tmp[o]; g += tmp[n + 1] - tmp[o + 1]; b += tmp[n + 2] - tmp[o + 2];
+    }
+  }
+}
+
+// --- Vice Paint: smooth, luminance-quantized, warm-blended, ink-outlined ---
+function paintPhoto(img, w, h, gradeKey) {
+  const grade = GRADES[gradeKey] || GRADES.sunset;
+  const cacheKey = `${img.currentSrc || img.src}|${w}x${h}|${gradeKey}`;
+  const hit = paintCache.get(cacheKey);
+  if (hit) return hit;
+
+  // 1. Cover-fit the photo into a working canvas.
+  const base = makeCanvas(w, h);
+  const bctx = base.getContext('2d');
+  const s0 = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+  const pw = img.naturalWidth * s0, ph = img.naturalHeight * s0;
+  bctx.drawImage(img, (w - pw) / 2, (h - ph) / 2, pw, ph);
+
+  // 2. Warm grade: soft-light sunset tint over the original.
+  const warm = makeCanvas(w, h);
+  const wctx = warm.getContext('2d');
+  wctx.drawImage(base, 0, 0);
+  wctx.globalCompositeOperation = 'soft-light';
+  wctx.fillStyle = grade.warm;
+  wctx.fillRect(0, 0, w, h);
+  wctx.globalCompositeOperation = 'source-over';
+
+  // 3. Three passes of radius-4 box blur for strong smoothing that keeps
+  //    edges crisp enough to survive posterization (a Gaussian blur melts
+  //    eyes and mouths; a box blur flattens skin while keeping structure).
+  const blurred = makeCanvas(w, h);
+  const pctx = blurred.getContext('2d');
+  pctx.drawImage(warm, 0, 0);
+  const imgData = pctx.getImageData(0, 0, w, h);
+  for (let pass = 0; pass < 3; pass++) boxBlur(imgData.data, w, h, 4);
+  const d = imgData.data;
+  const lum = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    lum[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  }
+  const step = 256 / 6;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const l = lum[i];
+      const q = (Math.floor(l / step) + 0.5) * step;
+      let f = l > 4 ? q / l : 1;
+      if (f < 0.5) f = 0.5;
+      if (f > 1.6) f = 1.6;
+      // Sobel magnitude on luminance for the ink edge.
+      let gx = 0, gy = 0;
+      if (x > 0 && x < w - 1 && y > 0 && y < h - 1) {
+        gx = -lum[i - w - 1] - 2 * lum[i - 1] - lum[i + w - 1]
+          + lum[i - w + 1] + 2 * lum[i + 1] + lum[i + w + 1];
+        gy = -lum[i - w - 1] - 2 * lum[i - w] - lum[i - w + 1]
+          + lum[i + w - 1] + 2 * lum[i + w] + lum[i + w + 1];
       }
+      const mag = Math.sqrt(gx * gx + gy * gy);
+      const ink = mag > 110 ? 0.55 : 1;
+      d[i * 4] = Math.min(255, d[i * 4] * f * ink);
+      d[i * 4 + 1] = Math.min(255, d[i * 4 + 1] * f * ink);
+      d[i * 4 + 2] = Math.min(255, d[i * 4 + 2] * f * ink);
     }
-    if (ys.length) bottom = Math.min(bottom, Math.max(...ys));
   }
-  return bottom === Infinity ? null : bottom;
+  pctx.putImageData(imgData, 0, 0);
+
+  // 5. Blend 60% painted over the warm original.
+  const out = makeCanvas(w, h);
+  const octx = out.getContext('2d');
+  octx.drawImage(warm, 0, 0);
+  octx.globalAlpha = 0.6;
+  octx.drawImage(blurred, 0, 0);
+  octx.globalAlpha = 1;
+
+  if (paintCache.size > 40) paintCache.clear();
+  paintCache.set(cacheKey, out);
+  return out;
 }
 
-/** Shrink a font until text fits maxW. Returns the fitted size. */
-function fitFont(ctx, text, font, maxW, start) {
-  let size = start;
-  ctx.font = font(size);
-  while (ctx.measureText(text).width > maxW && size > 10) {
-    size -= 2;
-    ctx.font = font(size);
+// Face-aware draw of one panel: the photo is cover-fit, zoomed, and centred
+// on the face anchor, with the chin clamped clear of the title zone.
+// The painted layer is rendered at the panel bbox's aspect ratio (scaled to
+// fit 720 px on the long side), so drawing it stretched to the bbox is uniform.
+function drawPanel(ctx, img, poly, panel, frame, w, h, gradeKey, titleTopY) {
+  const bb = polyBBox(poly, w, h);
+  if (bb.w < 4 || bb.h < 4) return;
+  const z0 = frame.z || 1;
+  const ay = frame.ay !== undefined ? frame.ay : 0.38;
+  const fy = frame.fy !== undefined ? frame.fy : panel.fy;
+  const fb = frame.fb !== undefined ? frame.fb : panel.fb;
+  const iw = img.naturalWidth, ih = img.naturalHeight;
+  const s0 = Math.max(bb.w / iw, bb.h / ih);
+  // Cap the zoom so the face never fills more than 62% of the panel height.
+  const zCap = (0.62 * bb.h) / (0.28 * ih * s0);
+  let z = Math.min(z0, zCap);
+  // Face anchor / chin in bbox coords under plain cover-fit.
+  const afx = panel.fx * iw * s0 + (bb.w - iw * s0) / 2;
+  const afy = fy * ih * s0 + (bb.h - ih * s0) / 2;
+  const afb = fb * ih * s0 + (bb.h - ih * s0) / 2;
+  let destX = bb.x, destY = bb.y, destW = bb.w, destH = bb.h;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    destW = bb.w * z;
+    destH = bb.h * z;
+    destX = bb.x + (0.5 + (frame.px || 0)) * bb.w - afx * z;
+    destY = bb.y + (ay + (frame.py || 0)) * bb.h - afy * z;
+    destX = Math.max(bb.x + bb.w - destW, Math.min(bb.x, destX));
+    destY = Math.max(bb.y + bb.h - destH, Math.min(bb.y, destY));
+    const chinY = destY + afb * z;
+    const clearLine = titleTopY - Math.max(14, h * 0.014);
+    if (bb.y + bb.h <= titleTopY || chinY <= clearLine) break;
+    // The chin is under the title line. First try shifting the photo up; if
+    // the coverage floor stops the shift from clearing the chin, zoom IN — a
+    // larger photo pushes the chin up relative to the panel bottom — up to
+    // the face-height cap. Never zoom out here: that only leaves black voids.
+    const floor = bb.y + bb.h - destH;
+    const shifted = Math.max(floor, clearLine - afb * z);
+    if (shifted + afb * z <= clearLine + 0.5) {
+      destY = shifted;
+      break;
+    }
+    if (z >= zCap) break; // best effort: chin as high as the cap allows
+    z = Math.min(zCap, z * 1.18);
   }
-  return size;
-}
-
-function pill(ctx, x, y, text, font, fg, bg, border) {
-  ctx.font = font;
-  const padX = 8, padY = 5;
-  const tw = ctx.measureText(text).width;
-  const m = /(\d+)px/.exec(font);
-  const fs = m ? parseInt(m[1], 10) : 14;
-  const bw = tw + padX * 2, bh = fs + padY * 2;
-  ctx.fillStyle = bg;
-  ctx.strokeStyle = border;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.roundRect(x, y, bw, bh, bh / 2);
-  ctx.fill(); ctx.stroke();
-  ctx.fillStyle = fg;
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(text, x + padX, y + bh / 2 + 0.5);
-  return bw;
-}
-
-/**
- * Draw one panel: the painted photo, face-aware cropped so the face anchor
- * lands at (fx, fy) of the panel, then the role tag and place pill.
- * crop = { zoom, px, py } user offsets (fractions of the panel).
- */
-function drawPanel(ctx, img, panelDef, panel, w, h, grade, crop, titleTop) {
-  const pts = panel.pts;
-  const bb = polyBBox(pts, w, h);
-  const painted = paintPhoto(img, grade);
-  const pw = painted.width, ph = painted.height;
-  const fy = panel.fy ?? 0.32;
-  const fx = panel.fx ?? 0.5;
-  const zoom = (panel.zoom ?? 1) * (crop && crop.zoom ? crop.zoom : 1);
-  const px = crop && crop.px ? crop.px : 0;
-  const py = crop && crop.py ? crop.py : 0;
-
+  const k = Math.min(1, 1024 / Math.max(bb.w, bb.h));
+  const painted = paintPhoto(img, Math.max(2, Math.round(bb.w * k)), Math.max(2, Math.round(bb.h * k)), gradeKey);
   ctx.save();
-  tracePoly(ctx, pts, w, h);
+  tracePoly(ctx, poly, w, h);
   ctx.clip();
-  // Cover-fit the panel bbox, then place the face anchor at (fx, fy) of it.
-  const s = Math.max(bb.w / pw, bb.h / ph) * zoom;
-  const dw = pw * s, dh = ph * s;
-  let dx = bb.x + fx * bb.w - panelDef.ax * dw + px * bb.w;
-  let dy = bb.y + fy * bb.h - panelDef.ay * dh + py * bb.h;
-  // Clamp so the photo still covers the whole bbox.
-  dx = Math.min(bb.x, Math.max(bb.x + bb.w - dw, dx));
-  dy = Math.min(bb.y, Math.max(bb.y + bb.h - dh, dy));
-  // Face-safe guard: keep the whole face (anchor down to the chin, fb) clear
-  // of the title band, shifting the photo up as far as the cover allows.
-  const faceBot = dy + panelDef.fb * dh;
-  const limit = titleTop * h - Math.max(8, 0.02 * h);
-  if (faceBot > limit && bb.y + bb.h > limit) {
-    dy = Math.max(bb.y + bb.h - dh, dy - (faceBot - limit));
-  }
-  ctx.drawImage(painted, dx, dy, dw, dh);
+  ctx.drawImage(painted, destX, destY, destW, destH);
   ctx.restore();
-
-  // Thick black gutter: stroke the panel outline (shared edges get stroked
-  // from both sides, so every divider reads as one solid black line).
-  ctx.save();
-  tracePoly(ctx, pts, w, h);
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = Math.max(5, w * 0.006);
-  ctx.lineJoin = 'round';
-  ctx.stroke();
-  ctx.restore();
-
-  // Role tag top-left; place pill top-right only when it cannot collide.
-  // Tags sit inside the polygon's ACTUAL span at the tag's height, not the
-  // bounding box: slanted panels share bbox edges with their neighbours, so
-  // bbox placement lets one panel's tag cover the next panel's pill.
-  const u = w / 1280; // scale unit: 1 at 1280 px wide
-  const tagFont = (px) => `700 ${Math.round(px)}px Arial, sans-serif`;
-  const tagSize = Math.max(10, Math.round(13 * u));
-  const tagY = bb.y + Math.max(6, 8 * u);
-  const tagH = tagSize + 10;
-  const span = spanAtY(pts, (tagY + tagH / 2) / h, w, h) || [bb.x, bb.x + bb.w];
-  const tagX = span[0] + Math.max(6, 8 * u);
-  const roleW = pill(ctx, tagX, tagY, panelDef.role, tagFont(tagSize), '#ffffff', 'rgba(0,0,0,0.88)', '#ffb347');
-  const placeFont = tagFont(Math.max(9, Math.round(11 * u)));
-  ctx.font = placeFont;
-  const placeW = ctx.measureText(panelDef.place).width + 16;
-  if (tagX + roleW + 10 + placeW < span[1] - 6) {
-    pill(ctx, span[1] - 6 - placeW, tagY, panelDef.place, placeFont, '#ffe9a3', 'rgba(0,0,0,0.88)', '#ffb347');
-  }
 }
 
-/** The quote bubble, anchored to the hero panel's lower-left, clear of faces. */
-function drawQuote(ctx, state, layout, w, h) {
-  const quote = (state.quote || '').trim();
-  if (!quote) return;
-  const hero = layout.panels.find((p) => p.id === (state.hero || 'wheelman')) || layout.panels[0];
-  const bb = polyBBox(hero.pts, w, h);
-  const u = w / 1280;
-  const fs = Math.max(11, Math.round(15 * u));
-  ctx.font = `italic ${fs}px Georgia, serif`;
-  const lines = [];
-  const maxW = w * 0.24;
-  const words = quote.split(/\s+/);
-  let line = '';
-  for (const word of words) {
-    const test = line ? line + ' ' + word : word;
-    if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = word; }
-    else line = test;
-  }
-  if (line) lines.push(line);
-  const bw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 22;
-  const bh = lines.length * fs * 1.35 + 14;
-  const bx = bb.x + Math.max(8, 0.02 * w);
-  // Anchor to the hero polygon's real bottom edge under the bubble (not the
-  // bbox — a slanted bottom edge is higher than the bbox bottom), and never
-  // let the bubble cover another panel's tag row below it.
-  let by = layout.titleTop * h - bh - 10;
-  const heroBottom = polyBottomAt(hero.pts, bx, bx + bw, w, h);
-  if (heroBottom !== null) by = Math.min(by, heroBottom - bh - 8);
-  for (const p of layout.panels) {
-    if (p.id === hero.id) continue;
-    const pbb = polyBBox(p.pts, w, h);
-    const tagTop = pbb.y + Math.max(6, 8 * (w / 1280));
-    if (tagTop > by && pbb.x < bx + bw && pbb.x + pbb.w > bx) {
-      by = Math.min(by, tagTop - bh - 6);
-    }
-  }
-  ctx.fillStyle = 'rgba(255,255,255,0.94)';
-  ctx.strokeStyle = '#1a1a1a';
-  ctx.lineWidth = 1.5;
+function pill(ctx, text, cx, cy, fontPx, fg, bg, border) {
+  ctx.font = `700 ${fontPx}px system-ui, sans-serif`;
+  const tw = ctx.measureText(text).width;
+  const padX = fontPx * 0.55, padY = fontPx * 0.32;
+  const x = cx - tw / 2 - padX, y = cy - fontPx / 2 - padY;
+  const r = (fontPx / 2 + padY) * 0.9;
   ctx.beginPath();
-  ctx.roundRect(bx, by, bw, bh, 8);
-  ctx.fill(); ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(bx + 18, by + bh - 1); ctx.lineTo(bx + 30, by + bh - 1); ctx.lineTo(bx + 22, by + bh + 9);
-  ctx.closePath(); ctx.fillStyle = 'rgba(255,255,255,0.94)'; ctx.fill();
-  ctx.fillStyle = '#222';
-  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  lines.forEach((l, i) => ctx.fillText(l, bx + 11, by + 8 + i * fs * 1.35));
+  ctx.roundRect(x, y, tw + padX * 2, fontPx + padY * 2, r);
+  ctx.fillStyle = bg;
+  ctx.fill();
+  if (border) {
+    ctx.lineWidth = Math.max(1, fontPx * 0.09);
+    ctx.strokeStyle = border;
+    ctx.stroke();
+  }
+  ctx.fillStyle = fg;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, cx, cy + fontPx * 0.05);
+  return tw + padX * 2;
 }
 
-/** The main title painted over the art, with subtitle and the VICE badge. */
-function drawTitle(ctx, state, layout, w, h) {
-  const grade = gradeOf(state.grade);
-  const title = (state.title || 'LEONIDA GOLD').trim().toUpperCase();
-  const top = layout.titleTop * h;
-  const maxW = w * 0.94;
-  const sizeCap = Math.round(h * (layout.titleCap || 0.16));
-  const size = Math.min(
-    fitFont(ctx, title, (s) => `${s}px Anton, sans-serif`, maxW, Math.round(h * 0.155)),
-    sizeCap,
-  );
-  const grad = ctx.createLinearGradient(0, top, 0, top + size * 1.05);
-  grad.addColorStop(0, grade.title[0]);
-  grad.addColorStop(1, grade.title[1]);
+function drawTitle(ctx, w, h, text, grade, titleTop, titleSize) {
+  const g = GRADES[grade] || GRADES.sunset;
+  // The whole title block (title + script sub-title) must fit below titleTop.
+  const fitCap = (h * (1 - titleTop) - 4) / 1.18;
+  let size = Math.min(h * titleSize, fitCap);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
+  const setFont = () => { ctx.font = `400 ${size}px Anton, 'Arial Narrow', sans-serif`; };
+  setFont();
+  while (ctx.measureText(text).width > w * 0.94 && size > 24) {
+    size -= 4;
+    setFont();
+  }
+  const cx = w / 2;
+  const baseline = titleTop * h + size * 0.80;
+  // Hard drop shadow.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+  ctx.fillText(text, cx + size * 0.03, baseline + size * 0.06);
+  // Thick black stroke, then the sunset/neon gradient fill.
   ctx.lineJoin = 'round';
-  // Hard offset shadow, then a thick black stroke, then the gradient fill.
-  ctx.font = `${size}px Anton, sans-serif`;
-  ctx.fillStyle = 'rgba(0,0,0,0.9)';
-  ctx.fillText(title, w / 2 + size * 0.045, top + size + size * 0.045);
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = Math.max(6, size * 0.16);
-  ctx.strokeText(title, w / 2, top + size);
+  ctx.lineWidth = Math.max(4, size * 0.15);
+  ctx.strokeStyle = '#0b0b0b';
+  ctx.strokeText(text, cx, baseline);
+  const grad = ctx.createLinearGradient(0, baseline - size, 0, baseline + size * 0.12);
+  grad.addColorStop(0, g.title[0]);
+  grad.addColorStop(0.55, g.title[1]);
+  grad.addColorStop(1, g.title[2]);
   ctx.fillStyle = grad;
-  ctx.fillText(title, w / 2, top + size);
-  // Slanted script sub-title below (clamped so it never runs off the canvas).
-  const sub = (state.subtitle || 'chasing the golden hour').trim();
-  if (sub) {
-    const subSize = Math.max(13, Math.round(size * 0.24));
-    ctx.font = `italic ${subSize}px Georgia, serif`;
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = 'rgba(0,0,0,0.85)';
-    ctx.shadowBlur = 6;
-    const subY = Math.min(top + size + subSize * 1.5, h - subSize * 0.4);
-    ctx.fillText(sub, w / 2, subY);
-    ctx.shadowBlur = 0;
-  }
-  // Small VICE corner badge.
-  const u = w / 1280;
-  const badgeSize = Math.max(10, Math.round(13 * u));
-  pill(ctx, w - Math.max(8, 12 * u) - 76 * u, Math.max(8, 10 * u), '★ VICE ★',
-    `700 ${badgeSize}px Arial, sans-serif`, '#ffd76a', 'rgba(0,0,0,0.88)', '#ffb347');
+  ctx.fillText(text, cx, baseline);
+  // Slanted script sub-title.
+  const subSize = Math.max(14, size * 0.22);
+  ctx.font = `italic 400 ${subSize}px Georgia, serif`;
+  ctx.lineWidth = Math.max(2, subSize * 0.10);
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+  ctx.strokeText('chasing the golden hour', cx, baseline + size * 0.30);
+  ctx.fillStyle = g.sub;
+  ctx.fillText('chasing the golden hour', cx, baseline + size * 0.30);
+  return baseline;
 }
 
-/**
- * Draw the whole cover onto canvas. state: { layout, grade, title, subtitle,
- * quote, hero, photos: { panelId: img }, crops: { panelId: { zoom, px, py } } }
+/** Draws the full cover onto `canvas`.
+ *  photos: array of 5 images (or null) in PANELS order.
+ *  opts: { layout, grade, caption, quote }.
  */
-export function drawCover(canvas, state) {
+export async function drawCover(canvas, photos, opts) {
+  const { layout = 'poster', grade = 'sunset', caption = 'LEONIDA GOLD', quote = true, frameOverrides = {} } = opts || {};
+  const L = LAYOUTS[layout] || LAYOUTS.poster;
+  const g = GRADES[grade] || GRADES.sunset;
   const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  const layout = layoutOf(state.layout);
-  const grade = gradeOf(state.grade);
-  ctx.fillStyle = '#000000';
+  const { width: w, height: h } = canvas;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#0b0b0b';
   ctx.fillRect(0, 0, w, h);
-  for (const panel of layout.panels) {
-    const def = PANEL_BY_ID[panel.id];
-    const img = state.photos && state.photos[panel.id];
-    if (!img) continue;
-    drawPanel(ctx, img, def, panel, w, h, grade,
-      state.crops && state.crops[panel.id], layout.titleTop);
-  }
-  drawQuote(ctx, state, layout, w, h);
-  drawTitle(ctx, state, layout, w, h);
-  // Clean outer frame.
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = Math.max(5, w * 0.006);
-  ctx.strokeRect(3, 3, w - 6, h - 6);
-}
+  const titleTopY = L.titleTop * h;
 
-/** Render the cover at export size and return the canvas. */
-export function exportCover(state, ew, eh) {
-  const canvas = document.createElement('canvas');
-  canvas.width = ew; canvas.height = eh;
-  drawCover(canvas, state);
-  return canvas;
+  // Panels.
+  for (let i = 0; i < 5; i++) {
+    const poly = L.polys[i];
+    const panel = PANELS[i];
+    const frame = { ...((L.frame && L.frame[i]) || {}), ...(frameOverrides[i] || {}) };
+    const img = photos[i];
+    if (img) {
+      drawPanel(ctx, img, poly, panel, frame, w, h, grade, titleTopY);
+    } else {
+      ctx.save();
+      tracePoly(ctx, poly, w, h);
+      ctx.fillStyle = '#241a2e';
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // Thick black gutters + outer border.
+  const gw = Math.max(5, Math.round(w * 0.006));
+  ctx.lineWidth = gw;
+  ctx.strokeStyle = '#0b0b0b';
+  ctx.lineJoin = 'miter';
+  for (const poly of L.polys) {
+    tracePoly(ctx, poly, w, h);
+    ctx.stroke();
+  }
+  ctx.strokeRect(gw / 2, gw / 2, w - gw, h - gw);
+
+  // Role tags (inside the polygon's real span at the tag height) + place pills.
+  const tagPx = Math.max(13, Math.round(h * 0.016));
+  const tagY = 0.022;
+  // Measure the VICE badge first: the top-right panel's place pill must end
+  // left of it, never under it.
+  ctx.font = `700 ${tagPx}px system-ui, sans-serif`;
+  const badgeText = '★ VICE ★';
+  const badgeW = ctx.measureText(badgeText).width + tagPx * 1.1;
+  const badgeCx = w - Math.max(34, w * 0.032) - badgeW / 2;
+  const badgeLeft = badgeCx - badgeW / 2;
+  for (let i = 0; i < 5; i++) {
+    const poly = L.polys[i];
+    const span = spanAtY(poly, tagY);
+    if (!span) continue;
+    const [sx0, sx1] = span;
+    const cy = tagY * h + tagPx * 0.7;
+    // Role tag, left inside the span.
+    ctx.font = `700 ${tagPx}px system-ui, sans-serif`;
+    const roleW = ctx.measureText(PANELS[i].role).width + tagPx * 1.1;
+    pill(ctx, PANELS[i].role, sx0 * w + roleW / 2 + 8, cy, tagPx, '#ffffff', 'rgba(8, 8, 8, 0.88)', '#f5b942');
+    // Place pill, right inside the span (clear of the VICE badge at top-right).
+    const isTopRight = sx1 > 0.97 && poly.some(([px, py]) => py === 0 && px === 1);
+    const placeW = ctx.measureText(PANELS[i].place).width + tagPx * 1.1;
+    const rightEdge = isTopRight ? Math.min(sx1 * w - 8, badgeLeft - 10) : sx1 * w - 8;
+    pill(ctx, PANELS[i].place, rightEdge - placeW / 2, cy, tagPx, '#ffd76a', 'rgba(8, 8, 8, 0.88)', '#f5b942');
+  }
+
+  // VICE badge, top-right corner.
+  pill(ctx, badgeText, badgeCx, tagY * h + tagPx * 0.7, tagPx, '#ffd76a', 'rgba(8, 8, 8, 0.92)', '#f5b942');
+
+  // Quote bubble, anchored to the hero polygon's real bottom edge.
+  if (quote && (layout === 'poster' || layout === 'hero' || layout === 'split' || layout === 'spotlight')) {
+    const heroPoly = L.polys[L.hero];
+    const cx = 0.5;
+    const bottomY = polyBottomAt(heroPoly, cx) * h;
+    const qPx = Math.max(13, Math.round(h * 0.015));
+    ctx.font = `italic 400 ${qPx}px Georgia, serif`;
+    const qText = 'We take the city tonight. — LUCIA';
+    const qw = ctx.measureText(qText).width + qPx * 1.6;
+    const qh = qPx * 2.1;
+    let qy = bottomY - qh - 10;
+    // Cap the bubble above the next row's tag line.
+    const capY = (L.titleTop - 0.06) * h;
+    if (qy + qh > capY) qy = capY - qh;
+    const qx = cx * w - qw / 2;
+    ctx.beginPath();
+    ctx.roundRect(qx, qy, qw, qh, qh / 2.4);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx * w - 8, qy + qh - 2);
+    ctx.lineTo(cx * w + 2, qy + qh + 12);
+    ctx.lineTo(cx * w + 12, qy + qh - 2);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+    ctx.fill();
+    ctx.fillStyle = '#1d1b22';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(qText, cx * w, qy + qh / 2 + 1);
+  }
+
+  // Over-art title.
+  const text = (caption || 'LEONIDA GOLD').trim().toUpperCase();
+  if (text) drawTitle(ctx, w, h, text, grade, L.titleTop, L.titleSize);
 }
