@@ -1,478 +1,403 @@
-// LEONIDA GOLD — Vice Cover Studio: canvas cover renderer (no dependencies).
-// Pure Canvas 2D: layouts, grades, chrome titles, procedural scenery, export.
+// LEONIDA GOLD cover renderer: multi-panel poster art, chrome 3D lettering,
+// layered type (title, script line, quote strip, tagline ribbon, seal, barcode).
+// Everything is drawn on canvas from the editor state; no network, no assets
+// outside app/. Panels are fractions of the canvas so every layout adapts to
+// any of the three export sizes.
 
-export const LAYOUTS = [
-  { id: 'poster', name: 'Poster' },
-  { id: 'hero', name: 'Hero' },
-  { id: 'split', name: 'Split Heist' },
-  { id: 'triptych', name: 'Triptych' },
-  { id: 'quad', name: 'Quad' },
-  { id: 'spotlight', name: 'Spotlight' },
-  { id: 'strip', name: 'Strip' },
-  { id: 'slant', name: 'Duo Slant' },
-];
+export const LAYOUTS = {
+  poster:    { name: 'Poster',    titleY: 0.60 },
+  hero:      { name: 'Hero',      titleY: 0.58 },
+  split:     { name: 'Split Heist', titleY: 0.55 },
+  triptych:  { name: 'Triptych',  titleY: 0.62 },
+  quad:      { name: 'Quad',      titleY: 0.55 },
+  spotlight: { name: 'Spotlight', titleY: 0.60 },
+  strip:     { name: 'Strip',     titleY: 0.60 },
+  slant:     { name: 'Duo Slant', titleY: 0.60 },
+};
 
-export const GRADES = [
-  { id: 'sunset', name: 'Vice Sunset', sky: ['#2b0a3d', '#7b1e5b', '#ff5e3a', '#ffb347'], sun: '#ffd76a', title: ['#fff3c4', '#ffb347', '#ff5e3a'], accent: '#ff5e3a', tint: '#ff5e3a', ink: '#1a0b2e' },
-  { id: 'neon', name: 'Neon Nights', sky: ['#050b2e', '#0b2a6b', '#123a8f', '#ff2e88'], sun: '#eaf6ff', title: ['#ffffff', '#7dd7ff', '#ff5da2'], accent: '#2fd4ff', tint: '#2fd4ff', ink: '#04081f' },
-  { id: 'gold', name: 'Palm Gold', sky: ['#3d2b00', '#8a6d00', '#e0a800', '#ffe9a8'], sun: '#fff3c4', title: ['#fffbe8', '#ffd76a', '#ff9a3c'], accent: '#ffd76a', tint: '#ffd76a', ink: '#241a00' },
-  { id: 'ocean', name: 'Ocean Drive', sky: ['#002b3d', '#005f73', '#0a9396', '#94d2bd'], sun: '#fff8d6', title: ['#eafffb', '#7fe3d0', '#0a9396'], accent: '#5eead4', tint: '#0a9396', ink: '#001b26' },
-  { id: 'dark', name: 'After Dark', sky: ['#0d001f', '#2a0a4a', '#5b2a86', '#c77dff'], sun: '#f3e8ff', title: ['#ffffff', '#c77dff', '#7b2ff7'], accent: '#c77dff', tint: '#7b2ff7', ink: '#0d001f' },
-  { id: 'noir', name: 'B&W Noir', sky: ['#000000', '#1a1a1a', '#4a4a4a', '#9a9a9a'], sun: '#f5f5f5', title: ['#ffffff', '#d4d4d4', '#8a8a8a'], accent: '#e5e5e5', tint: '#888888', ink: '#000000' },
-];
+export const GRADES = {
+  sunset: { name: 'Vice Sunset', wash: ['rgba(255,45,120,0.20)', 'rgba(255,140,40,0.26)'], title: ['#ffe9a8', '#ff9a3d', '#ff5e62'], accent: '#ff7ad9', tag: '#ffb347' },
+  neon:   { name: 'Neon Nights', wash: ['rgba(0,220,255,0.18)', 'rgba(255,0,160,0.22)'], title: ['#eafcff', '#7de3ff', '#c86bff'], accent: '#39d5ff', tag: '#39d5ff' },
+  palm:   { name: 'Palm Gold',   wash: ['rgba(255,190,60,0.22)', 'rgba(255,110,20,0.24)'], title: ['#fff6c9', '#ffd34d', '#ff8a1e'], accent: '#ffd34d', tag: '#ffd34d' },
+  ocean:  { name: 'Ocean Drive', wash: ['rgba(0,200,220,0.20)', 'rgba(0,120,255,0.22)'], title: ['#eafcff', '#8fe8ff', '#2f9dff'], accent: '#5fe8d0', tag: '#5fe8d0' },
+  dark:   { name: 'After Dark',  wash: ['rgba(20,10,60,0.30)', 'rgba(90,20,120,0.24)'], title: ['#f2ecff', '#b9a7ff', '#7a5cff'], accent: '#b9a7ff', tag: '#b9a7ff' },
+  noir:   { name: 'B&W Noir',    wash: null, title: ['#ffffff', '#d8d8d8', '#8a8a8a'], accent: '#ffffff', tag: '#ffffff' },
+};
 
-export function gradeById(id) {
-  return GRADES.find((g) => g.id === id) || GRADES[0];
-}
+export const ROLE_TAGS = ['THE WHEELMAN', 'THE LOOKOUT', 'THE DEALER', 'THE RUNNER', 'THE QUEEN'];
 
-function rng(seed) {
-  let s = (seed >>> 0) || 1;
-  return () => {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
+export const SAMPLES = ['boulevard', 'pier', 'skyline', 'street', 'marina'];
 
-// Panel rectangles for a layout, as fractions of (W, H). A panel may carry a
-// diagonal clip: { a: [x0,y0], b: [x1,y1] } fractions of the panel rect.
-export function panelsFor(layoutId, W, H) {
-  const portrait = H > W;
-  const gap = Math.max(3, Math.round(Math.min(W, H) * 0.006));
-  switch (layoutId) {
-    case 'hero':
-      if (portrait) {
-        return [
-          { x: 0, y: 0, w: W, h: H * 0.44 },
-          { x: 0, y: H * 0.44, w: W, h: H * 0.22 },
-        ];
-      }
-      return [{ x: 0, y: 0, w: W, h: H }];
-    case 'split':
-      return [
-        { x: 0, y: 0, w: W, h: H, diag: [[0, 0], [0.56, 0], [0.4, 1], [0, 1]] },
-        { x: 0, y: 0, w: W, h: H, diag: [[0.56, 0], [1, 0], [1, 1], [0.4, 1]] },
-      ];
-    case 'triptych':
-      return [0, 1, 2].map((i) => ({
-        x: i * (W / 3) + (i > 0 ? gap / 2 : 0),
-        y: 0,
-        w: W / 3 - (i === 1 ? gap : gap / 2),
-        h: H,
-      }));
-    case 'quad':
-      return [
-        { x: 0, y: 0, w: W / 2 - gap / 2, h: H / 2 - gap / 2 },
-        { x: W / 2 + gap / 2, y: 0, w: W / 2 - gap / 2, h: H / 2 - gap / 2 },
-        { x: 0, y: H / 2 + gap / 2, w: W / 2 - gap / 2, h: H / 2 - gap / 2 },
-        { x: W / 2 + gap / 2, y: H / 2 + gap / 2, w: W / 2 - gap / 2, h: H / 2 - gap / 2 },
-      ];
-    case 'spotlight':
-      return [
-        { x: 0, y: 0, w: W * 0.62 - gap / 2, h: H },
-        { x: W * 0.62 + gap / 2, y: 0, w: W * 0.38 - gap / 2, h: H / 2 - gap / 2 },
-        { x: W * 0.62 + gap / 2, y: H / 2 + gap / 2, w: W * 0.38 - gap / 2, h: H / 2 - gap / 2 },
-      ];
-    case 'strip':
-      return [
-        { x: 0, y: 0, w: W, h: H * 0.36 - gap / 2 },
-        { x: 0, y: H * 0.36 + gap / 2, w: W, h: H * 0.34 - gap },
-        { x: 0, y: H * 0.70 + gap / 2, w: W, h: H * 0.30 - gap / 2 },
-      ];
-    case 'slant':
-      return [
-        { x: 0, y: 0, w: W, h: H, diag: [[0, 0], [0.47, 0], [0.59, 1], [0, 1]] },
-        { x: 0, y: 0, w: W, h: H, diag: [[0.47, 0], [1, 0], [1, 1], [0.59, 1]] },
-      ];
-    case 'poster':
-    default:
-      return [{ x: 0, y: 0, w: W, h: H }];
+const GAP = 0.006; // panel gap as a fraction of canvas width
+
+function panelRects(layout, W, H) {
+  const top = 0.055, bottom = 0.855;
+  const gh = bottom - top;
+  switch (layout) {
+    case 'poster': return [
+      { x: 0, y: top, w: 0.333, h: gh * 0.5 },
+      { x: 0.333, y: top, w: 0.334, h: gh * 0.5 },
+      { x: 0.667, y: top, w: 0.333, h: gh * 0.5 },
+      { x: 0, y: top + gh * 0.5, w: 0.5, h: gh * 0.5 },
+      { x: 0.5, y: top + gh * 0.5, w: 0.5, h: gh * 0.5 },
+    ];
+    case 'hero': return [
+      { x: 0, y: top, w: 1, h: gh * 0.44 },
+      { x: 0, y: top + gh * 0.44, w: 0.5, h: gh * 0.28 },
+      { x: 0.5, y: top + gh * 0.44, w: 0.5, h: gh * 0.28 },
+      { x: 0, y: top + gh * 0.72, w: 0.5, h: gh * 0.28 },
+      { x: 0.5, y: top + gh * 0.72, w: 0.5, h: gh * 0.28 },
+    ];
+    case 'split': return [
+      { x: 0, y: top, w: 0.52, h: gh * 0.5, clip: 'diagL' },
+      { x: 0, y: top + gh * 0.5, w: 0.52, h: gh * 0.5, clip: 'diagL' },
+      { x: 0.48, y: top, w: 0.52, h: gh * 0.5, clip: 'diagR' },
+      { x: 0.48, y: top + gh * 0.5, w: 0.52, h: gh * 0.5, clip: 'diagR' },
+    ];
+    case 'triptych': return [
+      { x: 0, y: top, w: 0.333, h: gh },
+      { x: 0.333, y: top, w: 0.334, h: gh },
+      { x: 0.667, y: top, w: 0.333, h: gh },
+    ];
+    case 'quad': return [
+      { x: 0, y: top, w: 0.5, h: gh * 0.5 },
+      { x: 0.5, y: top, w: 0.5, h: gh * 0.5 },
+      { x: 0, y: top + gh * 0.5, w: 0.5, h: gh * 0.5 },
+      { x: 0.5, y: top + gh * 0.5, w: 0.5, h: gh * 0.5 },
+    ];
+    case 'spotlight': return [
+      { x: 0, y: top, w: 0.55, h: gh * 0.75 },
+      { x: 0.55, y: top, w: 0.45, h: gh * 0.375 },
+      { x: 0.55, y: top + gh * 0.375, w: 0.45, h: gh * 0.375 },
+      { x: 0, y: top + gh * 0.75, w: 0.5, h: gh * 0.25 },
+      { x: 0.5, y: top + gh * 0.75, w: 0.5, h: gh * 0.25 },
+    ];
+    case 'strip': return [0, 1, 2, 3, 4].map(i => ({ x: i * 0.2, y: top, w: 0.2, h: gh }));
+    case 'slant': return [0, 1, 2, 3, 4].map(i => ({ x: i * 0.2, y: top, w: 0.2, h: gh, clip: 'slant' }));
+    default: return panelRects('poster', W, H);
   }
 }
 
-// Where the title block sits for a layout. Returns { cx, eyebrowY, titleY,
-// taglineY, billingY, sealX, sealY, zone } in pixels; zone is the rect behind
-// the title (drawn as a skyline band for the portrait hero).
-export function titleZone(layoutId, W, H) {
-  const portrait = H > W;
-  if (layoutId === 'hero' && portrait) {
-    return {
-      cx: W / 2, eyebrowY: H * 0.64, titleY: H * 0.75, taglineY: H * 0.885,
-      billingY: H * 0.96, sealX: W * 0.93, sealY: H * 0.92,
-      zone: { x: 0, y: H * 0.66, w: W, h: H * 0.34 },
-    };
-  }
-  if (layoutId === 'hero') {
-    return {
-      cx: W / 2, eyebrowY: H * 0.48, titleY: H * 0.58, taglineY: H * 0.70,
-      billingY: H * 0.96, sealX: W * 0.93, sealY: H * 0.92,
-      zone: null,
-    };
-  }
-  return {
-    cx: W / 2, eyebrowY: H * 0.64, titleY: H * 0.75, taglineY: H * 0.885,
-    billingY: H * 0.96, sealX: W * 0.93, sealY: H * 0.92,
-    zone: null,
-  };
-}
-
-function skyline(ctx, x, y, w, h, rand, lit) {
-  // Deterministic building silhouettes with lit windows.
-  let bx = x;
-  ctx.fillStyle = '#0d0618';
-  while (bx < x + w - 8) {
-    const bw = 18 + rand() * (w * 0.09);
-    const bh = h * (0.35 + rand() * 0.6);
-    const by = y + h - bh;
-    ctx.fillRect(bx, by, bw, bh);
-    ctx.fillStyle = lit;
-    const cols = Math.max(1, Math.floor(bw / 12));
-    const rows = Math.max(1, Math.floor(bh / 16));
-    for (let c = 0; c < cols; c++) {
-      for (let r = 0; r < rows; r++) {
-        if (rand() < 0.45) {
-          ctx.fillRect(bx + 4 + c * 12, by + 6 + r * 16, 3.5, 5);
-        }
-      }
-    }
-    ctx.fillStyle = '#0d0618';
-    bx += bw + 2 + rand() * 8;
-  }
-}
-
-function palm(ctx, x, y, s, color) {
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = Math.max(2, s * 0.03);
+function clipPath(ctx, rect, W, H) {
+  const px = rect.x * W, py = rect.y * H, pw = rect.w * W, ph = rect.h * H;
   ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.quadraticCurveTo(x + s * 0.08, y - s * 0.55, x + s * 0.22, y - s * 0.8);
-  ctx.stroke();
-  const tx = x + s * 0.22;
-  const ty = y - s * 0.8;
-  for (let i = 0; i < 7; i++) {
-    const a = (-Math.PI * 0.15) - (i * Math.PI) / 7.2;
-    ctx.beginPath();
-    ctx.moveTo(tx, ty);
-    ctx.quadraticCurveTo(
-      tx + Math.cos(a) * s * 0.3, ty + Math.sin(a) * s * 0.22 + s * 0.08,
-      tx + Math.cos(a) * s * 0.52, ty + Math.sin(a) * s * 0.4 + s * 0.22,
-    );
-    ctx.stroke();
-  }
-}
-
-// One procedural Vice City scene, drawn into rect (x, y, w, h) on ctx.
-// scene: 'boulevard' | 'pier' | 'skyline'. Deterministic per (scene, seed).
-export function drawScene(ctx, x, y, w, h, grade, scene, seed) {
-  const rand = rng(seed);
-  const sky = ctx.createLinearGradient(0, y, 0, y + h);
-  grade.sky.forEach((c, i) => sky.addColorStop(i / (grade.sky.length - 1), c));
-  ctx.fillStyle = sky;
-  ctx.fillRect(x, y, w, h);
-
-  // Sun with glow — kept clear of the top-right callout bubble.
-  const sx = x + w * 0.45;
-  const sy = y + h * 0.24;
-  const sr = Math.min(w, h) * 0.16;
-  const glow = ctx.createRadialGradient(sx, sy, sr * 0.2, sx, sy, sr * 2.4);
-  glow.addColorStop(0, grade.sun);
-  glow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.globalAlpha = 0.5;
-  ctx.fillStyle = glow;
-  ctx.fillRect(sx - sr * 2.4, sy - sr * 2.4, sr * 4.8, sr * 4.8);
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = grade.sun;
-  ctx.beginPath();
-  ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Skyline band.
-  const bandY = y + h * 0.52;
-  skyline(ctx, x, bandY, w, h * 0.26, rand, 'rgba(255, 214, 106, 0.85)');
-
-  // Ground band per scene.
-  const gy = y + h * 0.78;
-  if (scene === 'boulevard') {
-    const road = ctx.createLinearGradient(0, gy, 0, y + h);
-    road.addColorStop(0, '#2a1a33');
-    road.addColorStop(1, '#12081f');
-    ctx.fillStyle = road;
-    ctx.fillRect(x, gy, w, y + h - gy);
-    ctx.fillStyle = 'rgba(255, 214, 106, 0.8)';
-    const dw = w * 0.02;
-    for (let i = 0; i < 5; i++) {
-      ctx.fillRect(x + w * 0.5 - dw / 2, gy + 6 + i * ((y + h - gy - 12) / 5), dw, (y + h - gy) * 0.09);
-    }
-    palm(ctx, x + w * 0.06, y + h * 0.82, h * 0.22, '#0d0618');
-    palm(ctx, x + w * 0.93, y + h * 0.8, h * 0.18, '#0d0618');
-  } else if (scene === 'pier') {
-    const sea = ctx.createLinearGradient(0, gy, 0, y + h);
-    sea.addColorStop(0, '#0b2a6b');
-    sea.addColorStop(1, '#050b2e');
-    ctx.fillStyle = sea;
-    ctx.fillRect(x, gy, w, y + h - gy);
-    ctx.fillStyle = 'rgba(234, 246, 255, 0.35)';
-    for (let i = 0; i < 6; i++) {
-      const lw = w * (0.1 + rand() * 0.25);
-      ctx.fillRect(x + rand() * (w - lw), gy + 8 + i * ((y + h - gy - 16) / 6), lw, 2);
-    }
-    ctx.fillStyle = '#0d0618';
-    for (let i = 0; i < 7; i++) {
-      const px = x + (i + 0.5) * (w / 7);
-      ctx.fillRect(px - 3, gy + h * 0.04, 6, y + h - gy - h * 0.04);
-    }
-    ctx.fillRect(x, gy + h * 0.04, w, 5);
-    palm(ctx, x + w * 0.08, y + h * 0.8, h * 0.2, '#0d0618');
+  if (rect.clip === 'diagL') {
+    ctx.moveTo(px, py); ctx.lineTo(px + pw + W * 0.06, py);
+    ctx.lineTo(px + pw - W * 0.02, py + ph); ctx.lineTo(px, py + ph);
+  } else if (rect.clip === 'diagR') {
+    ctx.moveTo(px + W * 0.02, py); ctx.lineTo(px + pw, py);
+    ctx.lineTo(px + pw, py + ph); ctx.lineTo(px - W * 0.06, py + ph);
+  } else if (rect.clip === 'slant') {
+    const s = W * 0.03;
+    ctx.moveTo(px + s, py); ctx.lineTo(px + pw + s, py);
+    ctx.lineTo(px + pw - s, py + ph); ctx.lineTo(px - s, py + ph);
   } else {
-    const sea = ctx.createLinearGradient(0, gy, 0, y + h);
-    sea.addColorStop(0, grade.sky[2]);
-    sea.addColorStop(1, '#0d0618');
-    ctx.fillStyle = sea;
-    ctx.fillRect(x, gy, w, y + h - gy);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
-    for (let i = 0; i < 8; i++) {
-      const lw = w * (0.08 + rand() * 0.3);
-      ctx.fillRect(x + rand() * (w - lw), gy + 6 + i * ((y + h - gy - 12) / 8), lw, 2);
-    }
-    palm(ctx, x + w * 0.05, y + h * 0.82, h * 0.24, '#0d0618');
-    palm(ctx, x + w * 0.94, y + h * 0.8, h * 0.2, '#0d0618');
+    ctx.rect(px, py, pw, ph);
   }
-}
-
-function drawPhoto(ctx, photo, rect, grade) {
-  const { img, zoom = 1, panX = 0, panY = 0 } = photo;
-  const scale = Math.max(rect.w / img.naturalWidth, rect.h / img.naturalHeight) * zoom;
-  const dw = img.naturalWidth * scale;
-  const dh = img.naturalHeight * scale;
-  const dx = rect.x + (rect.w - dw) / 2 + panX * rect.w;
-  const dy = rect.y + (rect.h - dh) / 2 + panY * rect.h;
-  if (grade.id === 'noir') ctx.filter = 'grayscale(1)';
-  ctx.drawImage(img, dx, dy, dw, dh);
-  ctx.filter = 'none';
-  ctx.globalAlpha = 0.14;
-  ctx.fillStyle = grade.tint;
-  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-  ctx.globalAlpha = 1;
-}
-
-function fitFont(ctx, text, maxW, size, family) {
-  let s = size;
-  ctx.font = `400 ${s}px ${family}`;
-  while (ctx.measureText(text).width > maxW && s > 16) {
-    s -= 4;
-    ctx.font = `400 ${s}px ${family}`;
-  }
-  return s;
-}
-
-function chromeTitle(ctx, text, cx, y, maxW, size, grade) {
-  const s = fitFont(ctx, text, maxW, size, 'Anton, sans-serif');
-  const w = ctx.measureText(text).width;
-  const grad = ctx.createLinearGradient(0, y - s * 0.55, 0, y + s * 0.55);
-  grad.addColorStop(0, grade.title[0]);
-  grad.addColorStop(0.55, grade.title[1]);
-  grad.addColorStop(1, grade.title[2]);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = grade.ink;
-  for (let i = 6; i >= 1; i--) ctx.fillText(text, cx + i * 1.4, y + i * 2);
-  ctx.fillStyle = grad;
-  ctx.fillText(text, cx, y);
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(cx - w / 2, y - s * 0.55, w, s * 0.24);
+  ctx.closePath();
   ctx.clip();
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.fillText(text, cx, y);
+}
+
+function drawPanelPhoto(ctx, panel, rect, W, H) {
+  const px = (rect.x + GAP / 2) * W, py = (rect.y + GAP / 2) * H;
+  const pw = (rect.w - GAP) * W, ph = (rect.h - GAP) * H;
+  ctx.save();
+  clipPath(ctx, { x: rect.x + GAP / 2, y: rect.y + GAP / 2, w: rect.w - GAP, h: rect.h - GAP, clip: rect.clip }, W, H);
+  const img = panel.img;
+  if (img && img.naturalWidth) {
+    const zoom = panel.zoom || 1;
+    const scale = Math.max(pw / img.naturalWidth, ph / img.naturalHeight) * zoom;
+    const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+    const dx = px + (pw - dw) / 2 + (panel.panX || 0) * pw;
+    const dy = py + (ph - dh) / 2 + (panel.panY || 0) * ph;
+    ctx.drawImage(img, dx, dy, dw, dh);
+  } else {
+    const g = ctx.createLinearGradient(px, py, px, py + ph);
+    g.addColorStop(0, '#3a1445'); g.addColorStop(1, '#12081f');
+    ctx.fillStyle = g; ctx.fillRect(px, py, pw, ph);
+  }
+  ctx.restore();
+  // frame line
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = Math.max(2, W * 0.002);
+  ctx.strokeRect(px, py, pw, ph);
   ctx.restore();
 }
 
-function wrapText(ctx, text, maxW) {
-  const words = text.split(' ');
-  const lines = [];
-  let line = '';
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word;
-    if (ctx.measureText(test).width <= maxW) {
-      line = test;
-    } else {
-      if (line) lines.push(line);
-      line = word;
-    }
+function drawRoleTag(ctx, panel, rect, W, H, accent, titleBand) {
+  const px = (rect.x + GAP / 2) * W, py = (rect.y + GAP / 2) * H;
+  const ph = (rect.h - GAP) * H;
+  const fs = Math.max(10, H * 0.018);
+  ctx.save();
+  ctx.font = `${fs}px Anton, sans-serif`;
+  const label = panel.tag || '';
+  const tw = ctx.measureText(label).width;
+  const bx = px + W * 0.008, bw = tw + W * 0.02, bh = fs * 1.7;
+  let by = py + ph - fs * 2.1;
+  // Hard gate: never let the chrome title hide a role tag. If the tag's
+  // default bottom-left spot falls under the title band, move it to the
+  // panel's top-left corner instead.
+  if (titleBand && by < titleBand.y1 && by + bh > titleBand.y0 && bx < titleBand.x1 && bx + bw > titleBand.x0) {
+    by = py + fs * 0.4;
   }
-  if (line) lines.push(line);
-  return lines.slice(0, 2);
+  ctx.fillStyle = 'rgba(10,4,18,0.88)';
+  roundRect(ctx, bx, by, bw, bh, bh / 2); ctx.fill();
+  ctx.strokeStyle = accent; ctx.lineWidth = Math.max(1.5, W * 0.0015); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, bx + W * 0.01, by + bh / 2 + 1);
+  ctx.restore();
 }
 
-function star(ctx, cx, cy, r, color) {
-  ctx.fillStyle = color;
+function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
-  for (let i = 0; i < 10; i++) {
-    const a = -Math.PI / 2 + (i * Math.PI) / 5;
-    const rr = i % 2 === 0 ? r : r * 0.45;
-    const px = cx + Math.cos(a) * rr;
-    const py = cy + Math.sin(a) * rr;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
-  ctx.fill();
 }
 
-// The main entry: draw the cover into canvas at (W, H).
-// state: { layout, grade, title, tagline, callout, calloutBy, roles, scenes }
-// images: array parallel to panelsFor(layout, W, H): { img, zoom, panX, panY } | null
-export function renderCover(canvas, state, images) {
-  const W = canvas.width;
-  const H = canvas.height;
-  const ctx = canvas.getContext('2d');
-  const grade = gradeById(state.grade);
-  const panels = panelsFor(state.layout, W, H);
-  const scenes = state.scenes || ['boulevard', 'pier', 'skyline'];
+function fitFont(ctx, text, maxW, startPx, family, weight = '') {
+  let size = startPx;
+  ctx.font = `${weight} ${size}px ${family}`;
+  while (size > 12 && ctx.measureText(text).width > maxW) {
+    size -= 2;
+    ctx.font = `${weight} ${size}px ${family}`;
+  }
+  return size;
+}
 
-  // Base sky.
-  const base = ctx.createLinearGradient(0, 0, 0, H);
-  grade.sky.forEach((c, i) => base.addColorStop(i / (grade.sky.length - 1), c));
-  ctx.fillStyle = base;
+function drawChromeTitle(ctx, text, cx, cy, maxW, maxH, colors) {
+  const size = fitFont(ctx, text, maxW, maxH, 'Anton, sans-serif');
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `${size}px Anton, sans-serif`;
+  // 3D depth: stacked dark layers
+  const depth = Math.max(3, size * 0.06);
+  ctx.fillStyle = '#1c0710';
+  for (let i = 5; i >= 1; i--) ctx.fillText(text, cx, cy + (depth * i) / 5);
+  ctx.fillStyle = '#3d0a2e';
+  ctx.fillText(text, cx, cy + depth);
+  // chrome gradient face with a warm glow so the title is the hero focal
+  // point even at thumbnail size (studio standard: dynamic lighting)
+  const g = ctx.createLinearGradient(cx, cy - size * 0.5, cx, cy + size * 0.5);
+  g.addColorStop(0, colors[0]); g.addColorStop(0.5, colors[1]); g.addColorStop(1, colors[2]);
+  ctx.shadowColor = colors[1];
+  ctx.shadowBlur = size * 0.14;
+  ctx.fillStyle = g;
+  ctx.fillText(text, cx, cy);
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(20,4,16,0.9)'; ctx.lineWidth = Math.max(2, size * 0.03);
+  ctx.strokeText(text, cx, cy);
+  ctx.restore();
+  return size;
+}
+
+function drawSeal(ctx, cx, cy, r, grade) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  // scalloped ring
+  ctx.fillStyle = '#f7b731';
+  ctx.beginPath();
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    const rr = i % 2 === 0 ? r : r * 0.88;
+    ctx[i === 0 ? 'moveTo' : 'lineTo'](Math.cos(a) * rr, Math.sin(a) * rr);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#1c0710';
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.78, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffd34d';
+  ctx.font = `${r * 0.42}px Anton, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('★', 0, -r * 0.18);
+  ctx.font = `${r * 0.16}px Anton, sans-serif`;
+  ctx.fillText('ORIGINAL', 0, r * 0.22);
+  ctx.fillText('COVER ART', 0, r * 0.42);
+  ctx.restore();
+}
+
+function drawBarcode(ctx, x, y, w, h) {
+  ctx.save();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#111';
+  let bx = x + w * 0.04;
+  const widths = [3, 1, 2, 1, 4, 2, 1, 3, 1, 2, 2, 1, 4, 1, 2, 3, 1, 1, 2, 4, 1, 3, 2, 1];
+  for (const bw of widths) {
+    const ww = bw * (w / 90);
+    ctx.fillRect(bx, y + h * 0.06, ww, h * 0.68);
+    bx += ww + w / 45;
+    if (bx > x + w * 0.96) break;
+  }
+  ctx.fillStyle = '#111';
+  const numSize = fitFont(ctx, '8 0413 2026 11', w * 0.92, Math.max(8, h * 0.16), 'monospace');
+  ctx.font = `${numSize}px monospace`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('8 0413 2026 11', x + w / 2, y + h * 0.88);
+  ctx.restore();
+}
+
+export function drawCover(ctx, state, W, H) {
+  const grade = GRADES[state.grade] || GRADES.sunset;
+  const rects = panelRects(state.layout, W, H);
+  const titleY = (LAYOUTS[state.layout] || LAYOUTS.poster).titleY;
+
+  // base
+  ctx.save();
+  ctx.fillStyle = '#12081f';
   ctx.fillRect(0, 0, W, H);
 
-  // Panels.
-  panels.forEach((p, i) => {
-    ctx.save();
-    ctx.beginPath();
-    if (p.diag) {
-      p.diag.forEach(([fx, fy], j) => {
-        const px = p.x + fx * p.w;
-        const py = p.y + fy * p.h;
-        if (j === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      });
-      ctx.closePath();
-    } else {
-      ctx.rect(p.x, p.y, p.w, p.h);
-    }
-    ctx.clip();
-    const photo = images && images[i];
-    if (photo && photo.img) {
-      drawPhoto(ctx, photo, p, grade);
-    } else {
-      drawScene(ctx, p.x, p.y, p.w, p.h, grade, scenes[i % scenes.length], 100 + i * 37);
-    }
-    ctx.restore();
-    // Panel separators.
-    ctx.strokeStyle = 'rgba(13, 6, 24, 0.9)';
-    ctx.lineWidth = Math.max(2, Math.min(W, H) * 0.004);
-    ctx.strokeRect(p.x, p.y, p.w, p.h);
+  // panels
+  const panels = state.panels || [];
+  rects.forEach((r, i) => {
+    drawPanelPhoto(ctx, panels[i] || {}, r, W, H);
   });
 
-  const tz = titleZone(state.layout, W, H);
-  const u = Math.min(W, H) / 1000; // unit scale
-
-  // Portrait hero: skyline band behind the title zone for density.
-  if (tz.zone) {
+  // grade wash over the photo grid
+  if (grade.wash) {
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(tz.zone.x, tz.zone.y, tz.zone.w, tz.zone.h);
-    ctx.clip();
-    const band = ctx.createLinearGradient(0, tz.zone.y, 0, tz.zone.y + tz.zone.h);
-    band.addColorStop(0, grade.sky[1]);
-    band.addColorStop(1, grade.ink);
-    ctx.fillStyle = band;
-    ctx.fillRect(tz.zone.x, tz.zone.y, tz.zone.w, tz.zone.h);
-    const rand = rng(777);
-    skyline(ctx, tz.zone.x, tz.zone.y + tz.zone.h * 0.42, tz.zone.w, tz.zone.h * 0.5, rand, 'rgba(255, 214, 106, 0.7)');
-    ctx.fillStyle = grade.ink;
-    ctx.fillRect(tz.zone.x, tz.zone.y + tz.zone.h * 0.88, tz.zone.w, tz.zone.h * 0.12);
+    clipPath(ctx, { x: 0, y: 0.055, w: 1, h: 0.8 }, W, H);
+    const g = ctx.createLinearGradient(0, H * 0.055, 0, H * 0.855);
+    g.addColorStop(0, grade.wash[0]);
+    g.addColorStop(1, grade.wash[1]);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, H * 0.055, W, H * 0.8);
+    ctx.restore();
+  } else {
+    // noir: desaturate the grid
+    ctx.save();
+    ctx.globalCompositeOperation = 'saturation';
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, H * 0.055, W, H * 0.8);
     ctx.restore();
   }
 
-  // Role tags, top-left.
-  const tagSize = Math.round(26 * u + 10);
-  ctx.font = `400 ${tagSize}px Anton, sans-serif`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  let tx = W * 0.03;
-  const ty = H * 0.045;
-  (state.roles || []).forEach((role) => {
-    const tw = ctx.measureText(role).width + tagSize * 1.4;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.strokeStyle = grade.accent;
-    ctx.lineWidth = Math.max(1.5, 2 * u);
+  // role tags (title band computed first so a tag never hides under it)
+  const titleSizeEarly = fitFont(ctx, state.title || 'LEONIDA GOLD', W * 0.94, H * 0.13, 'Anton, sans-serif');
+  ctx.font = `${titleSizeEarly}px Anton, sans-serif`;
+  const titleW = ctx.measureText(state.title || 'LEONIDA GOLD').width;
+  const titleBand = {
+    x0: W / 2 - titleW / 2 - W * 0.01, x1: W / 2 + titleW / 2 + W * 0.01,
+    y0: H * titleY - titleSizeEarly * 0.65, y1: H * titleY + titleSizeEarly * 0.65,
+  };
+  rects.forEach((r, i) => {
+    const p = panels[i] || {};
+    if (p.tag) drawRoleTag(ctx, p, r, W, H, grade.tag, titleBand);
+  });
+
+  // callout bubble (top-right of the grid, small)
+  if (state.callout) {
+    const bw = W * 0.30, bh = H * 0.105;
+    const bx = W * 0.665, by = H * 0.075;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.96)';
+    roundRect(ctx, bx, by, bw, bh, bh * 0.18); ctx.fill();
+    ctx.fillStyle = '#1c0710';
     ctx.beginPath();
-    ctx.roundRect(tx, ty - tagSize * 0.75, tw, tagSize * 1.5, tagSize * 0.75);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(role, tx + tagSize * 0.7, ty + 1);
-    tx += tw + W * 0.015;
-  });
+    ctx.moveTo(bx + bw * 0.22, by + bh);
+    ctx.lineTo(bx + bw * 0.30, by + bh + H * 0.02);
+    ctx.lineTo(bx + bw * 0.34, by + bh);
+    ctx.closePath(); ctx.fill();
+    ctx.font = `italic ${Math.max(11, H * 0.021)}px Georgia, serif`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#1c0710';
+    ctx.fillText(state.callout, bx + bw * 0.05, by + bh * 0.36, bw * 0.9);
+    ctx.fillStyle = grade.accent;
+    ctx.font = `${Math.max(10, H * 0.019)}px Anton, sans-serif`;
+    ctx.fillText('— ' + (state.calloutBy || 'LUCIA'), bx + bw * 0.05, by + bh * 0.76);
+    ctx.restore();
+  }
 
-  // Dialogue callout, top-right.
-  const cw = W * 0.38;
-  const ch = H * 0.125;
-  const cx0 = W * 0.59;
-  const cy0 = H * 0.035;
-  ctx.fillStyle = 'rgba(255,255,255,0.94)';
-  ctx.beginPath();
-  ctx.roundRect(cx0, cy0, cw, ch, Math.min(18, ch * 0.22));
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(cx0 + cw * 0.22, cy0 + ch);
-  ctx.lineTo(cx0 + cw * 0.3, cy0 + ch + H * 0.02);
-  ctx.lineTo(cx0 + cw * 0.36, cy0 + ch);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#241a33';
-  ctx.textAlign = 'left';
+  // top strip: stars + quote + VOL. 1 (quote starts after the measured stars)
+  const stripY = H * 0.028;
+  ctx.save();
+  ctx.font = `${Math.max(11, H * 0.02)}px Anton, sans-serif`;
   ctx.textBaseline = 'middle';
-  const qSize = Math.round(24 * u + 9);
-  ctx.font = `italic 400 ${qSize}px Georgia, serif`;
-  const lines = wrapText(ctx, state.callout || '', cw - qSize * 1.6);
-  lines.forEach((line, i) => {
-    ctx.fillText(line, cx0 + qSize * 0.8, cy0 + ch * 0.36 + i * qSize * 1.25);
-  });
-  ctx.fillStyle = grade.accent === '#e5e5e5' ? '#5b2a86' : grade.accent;
-  ctx.font = `400 ${Math.round(15 * u + 7)}px Anton, sans-serif`;
-  ctx.fillText(`— ${state.calloutBy || ''}`, cx0 + qSize * 0.8, cy0 + ch * 0.82);
-
-  // Eyebrow, chrome title, tagline.
-  const ebSize = Math.round(22 * u + 9);
-  ctx.font = `400 ${ebSize}px Anton, sans-serif`;
+  ctx.fillStyle = '#ffd34d';
+  ctx.textAlign = 'left';
+  ctx.fillText('★★★★★', W * 0.015, stripY);
+  const starsW = ctx.measureText('★★★★★').width;
+  const quoteX = W * 0.015 + starsW + W * 0.012;
+  const badgeW = W * 0.055, badgeH = H * 0.032;
+  const badgeX = W - badgeW - W * 0.012;
+  ctx.fillStyle = '#fff';
+  const quote = (state.quote || 'SUNSET HEIST OF THE YEAR') + '  —  THE LEONIDA LEDGER';
+  const qSize = fitFont(ctx, quote, badgeX - quoteX - W * 0.015, Math.max(11, H * 0.02), 'Anton, sans-serif');
+  ctx.font = `${qSize}px Anton, sans-serif`;
+  ctx.fillText(quote, quoteX, stripY);
+  // VOL. 1 badge
+  ctx.fillStyle = '#ffd34d';
+  roundRect(ctx, badgeX, stripY - badgeH / 2, badgeW, badgeH, 3); ctx.fill();
+  ctx.fillStyle = '#1c0710';
   ctx.textAlign = 'center';
+  ctx.fillText('VOL. 1', badgeX + badgeW / 2, stripY);
+  ctx.restore();
+
+  // chrome title + script line
+  const titleSize = drawChromeTitle(
+    ctx, state.title || 'LEONIDA GOLD', W / 2, H * titleY, W * 0.94, H * 0.13, grade.title,
+  );
+  ctx.save();
+  ctx.translate(W / 2, H * (titleY + 0.085));
+  ctx.rotate(-0.035);
+  ctx.font = `italic ${Math.max(14, H * 0.042)}px Georgia, serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = grade.accent;
-  ctx.fillText('VICE CITY STORIES', tz.cx, tz.eyebrowY);
-  chromeTitle(ctx, state.title || '', tz.cx, tz.titleY, W * 0.86, Math.round(H * 0.14), grade);
-  const tgSize = Math.round(20 * u + 8);
-  ctx.font = `400 ${tgSize}px Anton, sans-serif`;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(state.tagline || '', tz.cx, tz.taglineY);
+  ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = H * 0.008; ctx.shadowOffsetY = H * 0.003;
+  ctx.fillText(state.script || 'chasing the golden hour', 0, 0);
+  ctx.restore();
 
-  // Seal, bottom-right of the title zone.
-  const sr = Math.round(34 * u + 14);
-  ctx.strokeStyle = grade.accent;
-  ctx.lineWidth = Math.max(2, 3 * u);
-  ctx.beginPath();
-  ctx.arc(tz.sealX, tz.sealY, sr, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(tz.sealX, tz.sealY, sr * 0.78, 0, Math.PI * 2);
-  ctx.stroke();
-  star(ctx, tz.sealX, tz.sealY, sr * 0.42, grade.accent);
+  // tagline ribbon
+  const ribbonY = H * (titleY + 0.125), ribbonH = H * 0.032;
+  ctx.save();
+  ctx.fillStyle = 'rgba(10,4,18,0.92)';
+  ctx.fillRect(W * 0.18, ribbonY, W * 0.64, ribbonH);
+  ctx.fillStyle = '#ffe9b0';
+  ctx.font = `${Math.max(10, H * 0.019)}px Anton, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(state.tagline || 'ONE CREW · ONE COAST · NO WAY HOME', W / 2, ribbonY + ribbonH / 2);
+  ctx.restore();
 
-  // Billing, bottom-centre.
-  const bSize = Math.round(13 * u + 6);
-  ctx.font = `400 ${bSize}px system-ui, sans-serif`;
+  // bottom strip
+  const botY = H * 0.875, botH = H * 0.125;
+  ctx.save();
+  ctx.fillStyle = 'rgba(10,4,18,0.96)';
+  ctx.fillRect(0, botY, W, botH);
+  // COMING SOON
+  ctx.fillStyle = '#fff';
+  ctx.font = `${Math.max(11, H * 0.024)}px Anton, sans-serif`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('COMING SOON', W * 0.02, botY + botH * 0.42);
+  // billing
   ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  ctx.fillText('ALL CHARACTERS AND EVENTS ARE FICTIONAL  •  NO SUNSETS WERE HARMED', tz.cx, tz.billingY - bSize * 1.5);
-  ctx.fillText('LEONIDA GOLD PICTURES  •  A LEONIDA GOLD PRODUCTION  •  LEONIDAGOLD.PICTURES', tz.cx, tz.billingY);
+  ctx.font = `${Math.max(9, H * 0.015)}px Anton, sans-serif`;
+  ctx.fillStyle = '#ffe9b0';
+  ctx.fillText('LEONIDA GOLD PICTURES  ·  A LEONIDA GOLD PRODUCTION', W / 2, botY + botH * 0.30);
+  ctx.fillStyle = '#c9b8d9';
+  ctx.fillText('ALL CHARACTERS AND EVENTS ARE FICTIONAL  ·  NO SUNSETS WERE HARMED', W / 2, botY + botH * 0.58);
+  ctx.fillText('LEONIDAGOLD.PICTURES', W / 2, botY + botH * 0.84);
+  // seal + barcode (sized so they can never overlap, even in portrait)
+  const barcodeX = W * 0.915, barcodeW = W * 0.07;
+  let sealCx = W * 0.865;
+  let sealR = botH * 0.42;
+  const maxSealR = barcodeX - sealCx - W * 0.012;
+  if (sealR > maxSealR) sealR = Math.max(botH * 0.22, maxSealR);
+  if (sealCx + sealR > barcodeX - W * 0.008) sealCx = barcodeX - sealR - W * 0.01;
+  drawSeal(ctx, sealCx, botY + botH * 0.5, sealR, grade);
+  drawBarcode(ctx, barcodeX, botY + botH * 0.14, barcodeW, botH * 0.72);
+  ctx.restore();
+  ctx.restore();
+  return titleSize;
 }
 
-// Render the cover to an offscreen canvas at (w, h) and return a PNG blob.
-export function exportPNG(state, images, w, h) {
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  renderCover(canvas, state, images);
-  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+export function exportPNG(state, w, h) {
+  return new Promise((resolve) => {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    drawCover(ctx, state, w, h);
+    c.toBlob((b) => resolve(b), 'image/png');
+  });
 }
