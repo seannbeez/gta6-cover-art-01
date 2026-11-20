@@ -2,24 +2,36 @@
 
 [![make.fun](https://make.fun/badge.svg)](https://make.fun/bounty/gta6-cover-art-01)
 [![make.fun entry](https://make.fun/badge-entry.svg)](https://make.fun/bounty/gta6-cover-art-01)
-[![make.fun agent](https://make.fun/badge-agent.svg)](https://make.fun/)
+[![make.fun leaderboard](https://make.fun/badge-leaderboard.svg)](https://make.fun/bounty/gta6-cover-art-01)
 
-A web app that turns your photo and a caption into GTA 6-style multi-panel cover art: five busy photo panels, chrome 3D lettering, a script sub-title, quote strip, role tags, seal and billing — exported as PNG in 1080×1080, 1080×1350 and 1920×1080.
+Turn a photo and a caption into GTA 6-style multi-panel cover art — five busy
+illustrated Vice City scenes, each starring its own big illustrated character
+with a role tag, under a giant glowing chrome title. Fully offline, no upload,
+no network: everything runs in the browser.
 
-## Use it
+## What it does
 
-1. Open `app/index.html` in a desktop browser (or serve `app/` with any static server). No network needed.
-2. Pick a photo (upload your own, or use a sample), pick a panel to give it to.
-3. Choose a layout (8) and a grade (6), edit the caption.
-4. Export — one click per size, or all three at once.
+- **5 illustrated scenes** (Ocean Drive, Pier 9, Downtown, Vice City, Marina),
+  each with its own character: THE WHEELMAN, THE LOOKOUT, THE DEALER,
+  THE RUNNER, THE QUEEN — all original procedural illustration.
+- **8 panel layouts** (Poster, Hero, Split Heist, Triptych, Quad, Spotlight,
+  Strip, Duo Slant) and **6 grades** (Vice Sunset, Neon Nights, Palm Gold,
+  Ocean Drive, After Dark, B&W Noir).
+- **Any photo**: upload your own photo per panel, drag to pan, scroll to zoom.
+  “Use in all panels” fills every panel with the same photo.
+- **Poster lettering**: chrome 3D title with warm glow, script line, quote
+  strip, VOL. 1 badge, seal, barcode, billing block and COMING SOON.
+- **One-click PNG export** in 1080×1080, 1080×1350 and 1920×1080.
 
-## What is inside
+## Run it
 
-- `app/index.html` — the editor shell
-- `app/style.css` — dark editor theme
-- `app/src/cover.js` — the cover renderer: layouts, grades, chrome title, layered type, seal, barcode
-- `app/src/main.js` — editor wiring: upload, per-panel crop, export
-- `app/samples/` — five original illustrated Vice City scenes
-- `app/fonts/` — Anton (SIL OFL) for the chrome title
+Serve the `app/` folder with any static server and open `index.html`
+(`node serve.ts` in the kit, then http://localhost:8080). No build step,
+no dependencies, no network calls. The Anton typeface ships under
+`app/fonts/` under the SIL Open Font License.
 
-Built for the [Make GTA 6 Cover Art](https://make.fun/bounty/gta6-cover-art-01) bounty on make.fun. All imagery is procedural or original — no Rockstar artwork, logos or fonts.
+## Entry
+
+Built for the [Make GTA 6 Cover Art](https://make.fun/bounty/gta6-cover-art-01)
+bounty on [make.fun](https://make.fun) — a recorded-live entry, rebuilt fresh
+in one session. All artwork is original and procedural; no Rockstar assets.
